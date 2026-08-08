@@ -1,16 +1,24 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"net/http"
+	"net"
 )
 
 func main() {
-	servMux := http.NewServeMux()
-	server := &http.Server{
-		Addr:    ":2069",
-		Handler: servMux,
+	// Create the raw TCP connection. TODO upgrade to TLS.
+	ln, err := net.Listen("tcp", ":2069")
+	if err != nil {
+		log.Fatal("Could not open server")
 	}
 
-	log.Fatal(server.ListenAndServe())
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Printf("Error accepting a connection: %v", err)
+		}
+		go handleConnection(conn)
+	}
+
 }
