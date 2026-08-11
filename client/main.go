@@ -16,3 +16,5 @@ func main() {
 	status, err := bufio.NewReader(conn).ReadString('\n')
 	fmt.Println(status)
 }
+
+// Boot-dev test for streak keeping
