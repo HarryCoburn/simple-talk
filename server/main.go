@@ -15,6 +15,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Could not open server")
 	}
+	
 
 	for {
 		conn, err := ln.Accept()
@@ -37,7 +38,7 @@ func handleConnection(conn net.Conn, reader *bufio.Reader) {
 			fmt.Printf("connection broke, not EOF: %v", err)
 			return
 		}
-		fmt.Print(line)
+		fmt.Println(line)
 		fmt.Println("Received a connection message.")
 		conn.Write((fmt.Appendf([]byte{}, "Received message: %s", line)))
 	}

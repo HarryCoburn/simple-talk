@@ -5,16 +5,42 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 )
 
 func main() {
 	conn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
+	inputScanner := bufio.NewScanner(os.Stdin)
+	outputReader := bufio.NewReader(conn)
 	if err != nil {
 		log.Fatal("Client could not dial to the server.")
 	}
-	fmt.Fprintf(conn, "Hello\n")
-	status, err := bufio.NewReader(conn).ReadString('\n')
-	fmt.Println(status)
+
+	ch := make(chan struct{})
+	go handleClientInput(inputScanner, conn)
+	go handleServerOutput(outputReader, ch)
+	<-ch
+}
+
+func handleClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
+	for {
+		if inputScanner.Scan() {
+			input := inputScanner.Text()
+			fmt.Fprintf(conn, input+"\n")
+		}
+	}
+}
+
+func handleServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
+	for {
+		status, err := outputReader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Got an error or exit request")
+			ch <- struct{}{}
+			return
+		}
+		fmt.Println(status)
+	}
 }
 
 // Boot-dev test for streak keeping
