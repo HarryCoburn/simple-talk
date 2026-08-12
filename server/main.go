@@ -20,6 +20,14 @@ type ClientNumReq struct {
 	reply chan int
 }
 
+// Chat hub
+type Hub struct {
+	Register   chan *Client
+	Unregister chan *Client
+	Broadcast  chan []byte
+	Query      chan ClientNumReq
+}
+
 func main() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
@@ -27,22 +35,29 @@ func main() {
 		log.Fatal("Could not open server")
 	}
 
-	// Register channels. Thought: make this a struct?
-	registerChannel := make(chan *Client)
-	unregisterChannel := make(chan *Client)
-	broadcastChannel := make(chan []byte)
-	queryChannel := make(chan ClientNumReq)
+	hub := newHub()
 
 	// Base server loop. Start the goroutines and block on killServer
+	// Perhaps turn killServer into a select call.
 	killServer := make(chan struct{})
-	go runChatHub(registerChannel, unregisterChannel, broadcastChannel, queryChannel)
-	go clientListener(registerChannel, unregisterChannel, broadcastChannel, ln)
+	go hub.run()
+	go clientListener(&hub, ln)
 	<-killServer
 
 }
 
+// Create a new hub
+func newHub() Hub {
+	return Hub{
+		Register:   make(chan *Client),
+		Unregister: make(chan *Client),
+		Broadcast:  make(chan []byte),
+		Query:      make(chan ClientNumReq),
+	}
+}
+
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
-func clientListener(register chan *Client, unregister chan *Client, broadcast chan []byte, ln net.Listener) {
+func clientListener(hub *Hub, ln net.Listener) {
 	for {
 		// Listen for incoming connections
 		conn, err := ln.Accept()
@@ -55,34 +70,40 @@ func clientListener(register chan *Client, unregister chan *Client, broadcast ch
 			Connection: conn,
 			Reader:     reader,
 		}
-		register <- &newClient
-		go handleConnection(&newClient, broadcast, unregister)
+		hub.Register <- &newClient
+		go handleConnection(&newClient, hub.Broadcast, hub.Unregister)
 	}
 }
 
 // The channels for the chat are processed here, as is the clientList
-func runChatHub(register chan *Client, unregister chan *Client, broadcast chan []byte, query chan ClientNumReq) {
+func (h *Hub) run() {
 	clientList := make(map[*Client]struct{})
 	for {
 		select {
-		case c := <-register:
+		case c := <-h.Register:
 			fmt.Println("Received a registration request.")
 			clientList[c] = struct{}{}
-		case c := <-unregister:
+		case c := <-h.Unregister:
 			fmt.Println("Received an unregistration request")
 			c.Connection.Close()
 			delete(clientList, c)
-		case msg := <-broadcast:
+		case msg := <-h.Broadcast:
 			fmt.Println("Received a broadcast request")
 			for client := range clientList {
-				client.Connection.Write(fmt.Appendf([]byte{}, "%s", msg))
+				client.Connection.Write(msg)
 			}
-		case req := <-query:
+		case req := <-h.Query:
 			clientNum := len(clientList)
 			req.reply <- clientNum
 
 		}
 	}
+}
+
+func (h *Hub) clientCount() int {
+	ch := make(chan int, 1)
+	h.Query <- ClientNumReq{reply: ch}
+	return <-ch
 }
 
 // Processes what the client sends, and closes clients when they are gone.
