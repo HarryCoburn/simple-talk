@@ -9,11 +9,13 @@ import (
 	"net"
 )
 
+// An individual client connection.
 type Client struct {
 	Connection net.Conn
 	Reader     *bufio.Reader
 }
 
+// A struct for requesting the number of clients connected
 type ClientNumReq struct {
 	reply chan int
 }
@@ -25,11 +27,13 @@ func main() {
 		log.Fatal("Could not open server")
 	}
 
+	// Register channels. Thought: make this a struct?
 	registerChannel := make(chan *Client)
 	unregisterChannel := make(chan *Client)
 	broadcastChannel := make(chan []byte)
 	queryChannel := make(chan ClientNumReq)
 
+	// Base server loop. Start the goroutines and block on killServer
 	killServer := make(chan struct{})
 	go runChatHub(registerChannel, unregisterChannel, broadcastChannel, queryChannel)
 	go clientListener(registerChannel, unregisterChannel, broadcastChannel, ln)
@@ -37,6 +41,7 @@ func main() {
 
 }
 
+// Listen for incoming client connections, create them, then start a goroutine to handle them.
 func clientListener(register chan *Client, unregister chan *Client, broadcast chan []byte, ln net.Listener) {
 	for {
 		// Listen for incoming connections
@@ -55,6 +60,7 @@ func clientListener(register chan *Client, unregister chan *Client, broadcast ch
 	}
 }
 
+// The channels for the chat are processed here, as is the clientList
 func runChatHub(register chan *Client, unregister chan *Client, broadcast chan []byte, query chan ClientNumReq) {
 	clientList := make(map[*Client]struct{})
 	for {
@@ -79,6 +85,7 @@ func runChatHub(register chan *Client, unregister chan *Client, broadcast chan [
 	}
 }
 
+// Processes what the client sends, and closes clients when they are gone.
 func handleConnection(client *Client, broadcast chan []byte, unregister chan *Client) {
 	for {
 		line, err := client.Reader.ReadString('\n')

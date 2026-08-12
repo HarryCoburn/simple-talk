@@ -21,29 +21,25 @@ func TestRegisterClient(t *testing.T) {
 	}
 
 	// Okay to mock a nil client because we are not touching what is inside
-	// for this test.
+	// for this test. However, we will mock a connection momentarily.
 	rCh <- &Client{}
 
 	if got := clientCount(t, qCh); got != 1 {
 		t.Errorf("Expected length 1, got %d", got)
 	}
 
-	// uCh <- &Client{}
-	// if got := clientCount(t, qCh); got != 0 {
-	// 	t.Errorf("Expected length 0, got %d", got)
-	// }
-
 }
 
+// Helper for creating the channel connections into a goroutine
 func clientCount(t *testing.T, qCh chan<- ClientNumReq) int {
-	t.Helper()
-	ch := make(chan int, 1)
-	qCh <- ClientNumReq{reply: ch}
+	t.Helper()                     // Helps with test dumps
+	ch := make(chan int, 1)        // It's a single query, so make its size 1
+	qCh <- ClientNumReq{reply: ch} // Wrap the reply channel into the request so the goroutine can return without exiting.
 	select {
-	case numClients := <-ch:
+	case numClients := <-ch: // ch replied
 		return numClients
-	case <-time.After(time.Millisecond * 500):
+	case <-time.After(time.Millisecond * 500): // ch waited too long
 		t.Fatalf("Timed out trying to get the number of clients.")
 	}
-	return -1
+	return -1 // Marker of a bad result.
 }
