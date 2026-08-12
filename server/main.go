@@ -41,19 +41,20 @@ func main() {
 	// Perhaps turn killServer into a select call.
 	killServer := make(chan struct{})
 	go hub.run()
-	go clientListener(&hub, ln)
+	go clientListener(hub, ln)
 	<-killServer
 
 }
 
 // Create a new hub
-func newHub() Hub {
-	return Hub{
+func newHub() *Hub {
+	hub := Hub{
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan []byte),
 		Query:      make(chan ClientNumReq),
 	}
+	return &hub
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
@@ -63,6 +64,7 @@ func clientListener(hub *Hub, ln net.Listener) {
 		conn, err := ln.Accept()
 		if err != nil {
 			fmt.Printf("Error accepting a connection: %v", err)
+			continue
 		}
 		// A connection is detected. Make the client and send it to the hub.
 		reader := bufio.NewReader(conn)
