@@ -26,7 +26,7 @@ func handleClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
 	for {
 		if inputScanner.Scan() {
 			input := inputScanner.Text()
-			fmt.Fprintf(conn, input+"\n")
+			fmt.Fprintln(conn, input)
 		}
 	}
 }

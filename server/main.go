@@ -14,6 +14,10 @@ type Client struct {
 	Reader     *bufio.Reader
 }
 
+type ClientNumReq struct {
+	reply chan int
+}
+
 func main() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
@@ -24,9 +28,10 @@ func main() {
 	registerChannel := make(chan *Client)
 	unregisterChannel := make(chan *Client)
 	broadcastChannel := make(chan []byte)
+	queryChannel := make(chan ClientNumReq)
 
 	killServer := make(chan struct{})
-	go runChatHub(registerChannel, unregisterChannel, broadcastChannel)
+	go runChatHub(registerChannel, unregisterChannel, broadcastChannel, queryChannel)
 	go clientListener(registerChannel, unregisterChannel, broadcastChannel, ln)
 	<-killServer
 
@@ -50,7 +55,7 @@ func clientListener(register chan *Client, unregister chan *Client, broadcast ch
 	}
 }
 
-func runChatHub(register chan *Client, unregister chan *Client, broadcast chan []byte) {
+func runChatHub(register chan *Client, unregister chan *Client, broadcast chan []byte, query chan ClientNumReq) {
 	clientList := make(map[*Client]struct{})
 	for {
 		select {
@@ -66,6 +71,10 @@ func runChatHub(register chan *Client, unregister chan *Client, broadcast chan [
 			for client := range clientList {
 				client.Connection.Write(fmt.Appendf([]byte{}, "%s", msg))
 			}
+		case req := <-query:
+			clientNum := len(clientList)
+			req.reply <- clientNum
+
 		}
 	}
 }
