@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"net"
 	"testing"
 )
@@ -26,10 +25,7 @@ func TestRegisterClient(t *testing.T) {
 	in, _ := net.Pipe()
 
 	// Register a client
-	newHub.Register <- &Client{
-		Connection: in,
-		Reader:     bufio.NewReader(in),
-	}
+	newHub.Register <- newClient(in)
 
 	if got := newHub.clientCount(); got != 1 {
 		t.Errorf("Expected length 1, got %d", got)
@@ -44,14 +40,11 @@ func TestDeregisterClient(t *testing.T) {
 	in, _ := net.Pipe()
 
 	// Make a client
-	newClient := Client{
-		Connection: in,
-		Reader:     bufio.NewReader(in),
-	}
+	newClient := newClient(in)
 
 	// Register, then deregister the client
-	newHub.Register <- &newClient
-	newHub.Unregister <- &newClient
+	newHub.Register <- newClient
+	newHub.Unregister <- newClient
 
 	// Testing
 	if got := newHub.clientCount(); got != 0 {

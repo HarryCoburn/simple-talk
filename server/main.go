@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -9,23 +8,9 @@ import (
 	"net"
 )
 
-// An individual client connection.
-type Client struct {
-	Connection net.Conn
-	Reader     *bufio.Reader
-}
-
 // A struct for requesting the number of clients connected
 type ClientNumReq struct {
 	reply chan int
-}
-
-// Chat hub
-type Hub struct {
-	Register   chan *Client
-	Unregister chan *Client
-	Broadcast  chan []byte
-	Query      chan ClientNumReq
 }
 
 func main() {
@@ -43,18 +28,6 @@ func main() {
 	go hub.run()
 	go clientListener(hub, ln)
 	<-killServer
-
-}
-
-// Create a new hub
-func newHub() *Hub {
-	hub := Hub{
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Broadcast:  make(chan []byte),
-		Query:      make(chan ClientNumReq),
-	}
-	return &hub
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
@@ -67,13 +40,10 @@ func clientListener(hub *Hub, ln net.Listener) {
 			continue
 		}
 		// A connection is detected. Make the client and send it to the hub.
-		reader := bufio.NewReader(conn)
-		newClient := Client{
-			Connection: conn,
-			Reader:     reader,
-		}
-		hub.Register <- &newClient
-		go handleConnection(&newClient, hub.Broadcast, hub.Unregister)
+		newClient := newClient(conn)
+		hub.Register <- newClient
+		go handleConnection(newClient, hub.Broadcast, hub.Unregister)
+		go newClient.writeLoop()
 	}
 }
 
@@ -92,7 +62,7 @@ func (h *Hub) run() {
 		case msg := <-h.Broadcast:
 			fmt.Println("Received a broadcast request")
 			for client := range clientList {
-				client.Connection.Write(msg)
+				client.Out <- msg
 			}
 		case req := <-h.Query:
 			clientNum := len(clientList)
@@ -108,7 +78,7 @@ func (h *Hub) clientCount() int {
 	return <-ch
 }
 
-// Processes what the client sends, and closes clients when they are gone.
+// Reads what the client sends, and closes clients when they are gone.
 func handleConnection(client *Client, broadcast chan []byte, unregister chan *Client) {
 	for {
 		line, err := client.Reader.ReadString('\n')
