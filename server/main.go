@@ -57,7 +57,7 @@ func (h *Hub) run() {
 			clientList[c] = struct{}{}
 		case c := <-h.Unregister:
 			fmt.Println("Received an unregistration request")
-			c.Connection.Close()
+			close(c.Out) // Close writer loop
 			delete(clientList, c)
 		case msg := <-h.Broadcast:
 			fmt.Println("Received a broadcast request")
@@ -79,16 +79,16 @@ func (h *Hub) clientCount() int {
 }
 
 // Reads what the client sends, and closes clients when they are gone.
-func handleConnection(client *Client, broadcast chan []byte, unregister chan *Client) {
+func handleConnection(c *Client, broadcast chan []byte, unregister chan *Client) {
 	for {
-		line, err := client.Reader.ReadString('\n')
+		line, err := c.Reader.ReadString('\n')
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				fmt.Println("Connection closed cleanly")
 			} else {
 				fmt.Printf("connection broke, not EOF: %v", err)
 			}
-			unregister <- client
+			unregister <- c
 			return
 		}
 		broadcast <- []byte(line)
