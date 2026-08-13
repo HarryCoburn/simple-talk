@@ -46,6 +46,7 @@ func (c *Client) writeLoop() {
 // Reads what the client sends, and closes clients when they are gone.
 func (c *Client) readLoop(hub *Hub) {
 	for {
+
 		line, err := c.Reader.ReadString('\n')
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -53,10 +54,17 @@ func (c *Client) readLoop(hub *Hub) {
 			} else {
 				fmt.Printf("connection broke, not EOF: %v", err)
 			}
-			hub.Unregister <- c
+			select {
+			case hub.Unregister <- c:
+				return
+			case <-hub.Done:
+				return
+			}
+		}
+		select {
+		case hub.Broadcast <- Message{From: c, Data: []byte(line)}:
+		case <-hub.Done:
 			return
 		}
-		hub.Broadcast <- Message{From: c, Data: []byte(line)}
-
 	}
 }

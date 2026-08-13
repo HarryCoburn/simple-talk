@@ -17,12 +17,12 @@ func main() {
 	}
 
 	ch := make(chan struct{})
-	go handleClientInput(inputScanner, conn)
-	go handleServerOutput(outputReader, ch)
+	go sendClientInput(inputScanner, conn)
+	go acceptServerOutput(outputReader, ch)
 	<-ch
 }
 
-func handleClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
+func sendClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
 	for {
 		if inputScanner.Scan() {
 			input := inputScanner.Text()
@@ -31,7 +31,7 @@ func handleClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
 	}
 }
 
-func handleServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
+func acceptServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
 	for {
 		status, err := outputReader.ReadString('\n')
 		if err != nil {
@@ -42,5 +42,3 @@ func handleServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
 		fmt.Println(status)
 	}
 }
-
-// Boot-dev test for streak keeping

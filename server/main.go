@@ -25,12 +25,13 @@ func main() {
 	// Perhaps turn killServer into a select call.
 	killServer := make(chan struct{})
 	go hub.run()
-	go acceptLoop(hub, ln)
+	go acceptLoop(hub, ln, killServer)
 	<-killServer
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
-func acceptLoop(hub *Hub, ln net.Listener) {
+func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
+	defer close(stopped)
 	for {
 		// Listen for incoming connections
 		conn, err := ln.Accept()
@@ -39,14 +40,21 @@ func acceptLoop(hub *Hub, ln net.Listener) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			fmt.Printf("Error accepting a connection: %v", err)
+			log.Printf("Error accepting a connection: %v\n", err)
 			continue
 		}
 		// A connection is detected. Make the client and send it to the hub.
 		newClient := newClient(conn)
-		hub.Register <- newClient
-		go newClient.readLoop(hub)
+
+		select {
+		case hub.Register <- newClient:
+		case <-hub.Done:
+			conn.Close()
+			return
+		}
 		go newClient.writeLoop()
+		go newClient.readLoop(hub)
+
 	}
 }
 
