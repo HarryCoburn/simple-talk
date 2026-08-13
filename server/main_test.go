@@ -83,3 +83,19 @@ func TestBroadcast(t *testing.T) {
 		t.Errorf("client2 got %q, want %q", read2, payload)
 	}
 }
+
+// In progress
+func TestDropPath(t *testing.T) {
+	newHub := newTestHub()
+	client := &Client{Out: make(chan []byte, 1)}
+	newHub.Register <- client
+	payload1 := []byte("Test")
+	payload2 := []byte("Received")
+	newHub.Broadcast <- payload1
+	newHub.Broadcast <- payload2
+
+	if got := newHub.clientCount(); got != 0 {
+		t.Errorf("Expected length 0, got %d", got)
+	}
+
+}
