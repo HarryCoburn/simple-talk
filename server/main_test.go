@@ -1,64 +1,51 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
-	"fmt"
+	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
 )
 
-func newTestHub(t *testing.T) *Hub {
-	hub := newHub()
-
-	// Start the chathub goroutine
-	go hub.run()
-	t.Cleanup(func() { close(hub.Done) })
-	return hub
-}
-
 func TestRegisterClient(t *testing.T) {
-	newHub := newTestHub(t)
+	chatHub := newTestHub(t)
 
 	// Testing
-	if got := newHub.clientCount(); got != 0 {
+	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0, got %d", got)
 	}
 
-	// Make a pipe connection
-	in, _ := net.Pipe()
-
 	// Register a client
-	newHub.Register <- newClient(in)
+	chatHub.Register <- &Client{Out: make(chan Message, 1)}
 
-	if got := newHub.clientCount(); got != 1 {
+	if got := chatHub.clientCount(); got != 1 {
 		t.Errorf("Expected length 1, got %d", got)
 	}
 
 }
 
 func TestDeregisterClient(t *testing.T) {
-	newHub := newTestHub(t)
-
-	// Make a pipe connection
-	in, _ := net.Pipe()
+	chatHub := newTestHub(t)
 
 	// Make a client
-	newClient := newClient(in)
+	chatClient := &Client{Out: make(chan Message, 1)}
 
 	// Register, then deregister the client
-	newHub.Register <- newClient
-	newHub.Unregister <- newClient
+	chatHub.Register <- chatClient
+	chatHub.Unregister <- chatClient
 
 	// Testing
-	if got := newHub.clientCount(); got != 0 {
+	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0 after de-registration, got %d", got)
 	}
 
 	// Try double deregistration
-	newHub.Unregister <- newClient
+	chatHub.Unregister <- chatClient
 
-	if got := newHub.clientCount(); got != 0 {
+	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0 after double de-registration, got %d", got)
 	}
 
@@ -66,17 +53,17 @@ func TestDeregisterClient(t *testing.T) {
 
 // Test if broadcasting works to connected clients
 func TestBroadcast(t *testing.T) {
-	newHub := newTestHub(t)
-	client1 := &Client{Out: make(chan Message, 1)}
-	client2 := &Client{Out: make(chan Message, 1)}
+	chatHub := newTestHub(t)
+	client1 := &Client{Name: "Alice", Out: make(chan Message, 1)}
+	client2 := &Client{Name: "Bob", Out: make(chan Message, 1)}
 	payload := []byte("Test")
 	msg := Message{
 		From: client1,
 		Data: payload,
 	}
-	newHub.Register <- client1
-	newHub.Register <- client2
-	newHub.Broadcast <- msg
+	chatHub.Register <- client1
+	chatHub.Register <- client2
+	chatHub.Broadcast <- msg
 	var read1 []byte
 	var read2 []byte
 	select {
@@ -91,25 +78,58 @@ func TestBroadcast(t *testing.T) {
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read2")
 	}
-	if !bytes.Equal(read1, fmt.Appendf(nil, "<> %s", payload)) {
-		t.Errorf("client1 got %q, want %q", read1, fmt.Appendf(nil, "<> %s", payload))
+	if !bytes.Equal(read1, []byte("<Alice> Test")) {
+		t.Errorf("client1 got %q, want %q", read1, []byte("<Alice> Test"))
 	}
-	if !bytes.Equal(read2, fmt.Appendf(nil, "<> %s", payload)) {
-		t.Errorf("client1 got %q, want %q", read2, fmt.Appendf(nil, "<> %s", payload))
+	if !bytes.Equal(read2, []byte("<Alice> Test")) {
+		t.Errorf("client2 got %q, want %q", read2, []byte("<Bob> Test"))
 	}
 }
 
 func TestDroppedClientPath(t *testing.T) {
-	newHub := newTestHub(t)
+	chatHub := newTestHub(t)
 	client := &Client{Out: make(chan Message, 1)} // Make a channel with a tiny buffer
-	newHub.Register <- client
+	chatHub.Register <- client
 	payload1 := []byte("Test")
 	payload2 := []byte("Received")
-	newHub.Broadcast <- Message{From: client, Data: payload1} // Fill buffer
-	newHub.Broadcast <- Message{From: client, Data: payload2} // Overload Client.Out, which should force server to drop the client.
+	chatHub.Broadcast <- Message{From: client, Data: payload1} // Fill buffer
+	chatHub.Broadcast <- Message{From: client, Data: payload2} // Overload Client.Out, which should force server to drop the client.
 
-	if got := newHub.clientCount(); got != 0 {
+	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0, got %d", got)
 	}
 
+}
+
+func TestWriteLoopWriteAndClose(t *testing.T) {
+	in, out := net.Pipe()
+	t.Cleanup(func() { out.Close() })
+	chatClient := newClient(in)
+	go chatClient.writeLoop()
+	reader := bufio.NewReader(out)
+	msg := Message{From: chatClient, Data: []byte("Hello\n")}
+	chatClient.Out <- msg
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("ReadString failure.")
+	}
+	if line != "Hello\n" {
+		t.Errorf("Client sent Hello, Output pipe got %v", line)
+	}
+	close(chatClient.Out)
+	line, err = reader.ReadString('\n')
+	if errors.Is(err, io.EOF) {
+		t.Errorf("Did not receive io.EOF after closing Out: %v", err)
+	}
+}
+
+// Helpers
+
+func newTestHub(t *testing.T) *Hub {
+	chatHub := newHub()
+
+	// Start the chathub goroutine
+	go chatHub.run()
+	t.Cleanup(func() { close(chatHub.Done) })
+	return chatHub
 }
