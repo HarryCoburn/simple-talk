@@ -2,21 +2,23 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"testing"
 	"time"
 )
 
-func newTestHub() *Hub {
+func newTestHub(t *testing.T) *Hub {
 	hub := newHub()
 
 	// Start the chathub goroutine
 	go hub.run()
+	t.Cleanup(func() { close(hub.Done) })
 	return hub
 }
 
 func TestRegisterClient(t *testing.T) {
-	newHub := newTestHub()
+	newHub := newTestHub(t)
 
 	// Testing
 	if got := newHub.clientCount(); got != 0 {
@@ -36,7 +38,7 @@ func TestRegisterClient(t *testing.T) {
 }
 
 func TestDeregisterClient(t *testing.T) {
-	newHub := newTestHub()
+	newHub := newTestHub(t)
 
 	// Make a pipe connection
 	in, _ := net.Pipe()
@@ -50,49 +52,61 @@ func TestDeregisterClient(t *testing.T) {
 
 	// Testing
 	if got := newHub.clientCount(); got != 0 {
-		t.Errorf("Expected length 0, got %d", got)
+		t.Errorf("Expected length 0 after de-registration, got %d", got)
+	}
+
+	// Try double deregistration
+	newHub.Unregister <- newClient
+
+	if got := newHub.clientCount(); got != 0 {
+		t.Errorf("Expected length 0 after double de-registration, got %d", got)
 	}
 
 }
 
 // Test if broadcasting works to connected clients
 func TestBroadcast(t *testing.T) {
-	newHub := newTestHub()
-	client1 := &Client{Out: make(chan []byte, 1)}
-	client2 := &Client{Out: make(chan []byte, 1)}
+	newHub := newTestHub(t)
+	client1 := &Client{Out: make(chan Message, 1)}
+	client2 := &Client{Out: make(chan Message, 1)}
 	payload := []byte("Test")
+	msg := Message{
+		From: client1,
+		Data: payload,
+	}
 	newHub.Register <- client1
 	newHub.Register <- client2
-	newHub.Broadcast <- payload
+	newHub.Broadcast <- msg
 	var read1 []byte
 	var read2 []byte
 	select {
-	case read1 = <-client1.Out:
+	case m := <-client1.Out:
+		read1 = m.Data
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read1")
 	}
 	select {
-	case read2 = <-client2.Out:
+	case m := <-client2.Out:
+		read2 = m.Data
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read2")
 	}
-	if !bytes.Equal(read1, payload) {
-		t.Errorf("client1 got %q, want %q", read1, payload)
+	if !bytes.Equal(read1, fmt.Appendf(nil, "<> %s", payload)) {
+		t.Errorf("client1 got %q, want %q", read1, fmt.Appendf(nil, "<> %s", payload))
 	}
-	if !bytes.Equal(read2, payload) {
-		t.Errorf("client2 got %q, want %q", read2, payload)
+	if !bytes.Equal(read2, fmt.Appendf(nil, "<> %s", payload)) {
+		t.Errorf("client1 got %q, want %q", read2, fmt.Appendf(nil, "<> %s", payload))
 	}
 }
 
-// In progress
-func TestDropPath(t *testing.T) {
-	newHub := newTestHub()
-	client := &Client{Out: make(chan []byte, 1)}
+func TestDroppedClientPath(t *testing.T) {
+	newHub := newTestHub(t)
+	client := &Client{Out: make(chan Message, 1)} // Make a channel with a tiny buffer
 	newHub.Register <- client
 	payload1 := []byte("Test")
 	payload2 := []byte("Received")
-	newHub.Broadcast <- payload1
-	newHub.Broadcast <- payload2
+	newHub.Broadcast <- Message{From: client, Data: payload1} // Fill buffer
+	newHub.Broadcast <- Message{From: client, Data: payload2} // Overload Client.Out, which should force server to drop the client.
 
 	if got := newHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0, got %d", got)

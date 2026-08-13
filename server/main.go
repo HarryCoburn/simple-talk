@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 )
@@ -26,23 +25,27 @@ func main() {
 	// Perhaps turn killServer into a select call.
 	killServer := make(chan struct{})
 	go hub.run()
-	go clientListener(hub, ln)
+	go acceptLoop(hub, ln)
 	<-killServer
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
-func clientListener(hub *Hub, ln net.Listener) {
+func acceptLoop(hub *Hub, ln net.Listener) {
 	for {
 		// Listen for incoming connections
 		conn, err := ln.Accept()
+
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			fmt.Printf("Error accepting a connection: %v", err)
 			continue
 		}
 		// A connection is detected. Make the client and send it to the hub.
 		newClient := newClient(conn)
 		hub.Register <- newClient
-		go handleConnection(newClient, hub.Broadcast, hub.Unregister)
+		go newClient.readLoop(hub)
 		go newClient.writeLoop()
 	}
 }
@@ -57,17 +60,29 @@ func (h *Hub) run() {
 			clientList[c] = struct{}{}
 		case c := <-h.Unregister:
 			fmt.Println("Received an unregistration request")
+			if _, ok := clientList[c]; !ok { // Already removed, possibly by the drop path
+				continue
+			}
 			close(c.Out) // Close writer loop
 			delete(clientList, c)
 		case msg := <-h.Broadcast:
-			fmt.Println("Received a broadcast request")
+			msg.Data = fmt.Appendf(nil, "<%s> %s", msg.From.Name, msg.Data)
 			for client := range clientList {
-				client.Out <- msg
+				select {
+				case client.Out <- msg:
+				default: // Client has a problem. Start closing the client.
+					close(client.Out)
+					delete(clientList, client)
+				}
 			}
 		case req := <-h.Query:
 			clientNum := len(clientList)
 			req.reply <- clientNum
-
+		case <-h.Done: // For safe teardown
+			for c := range clientList {
+				close(c.Out)
+			}
+			return
 		}
 	}
 }
@@ -76,21 +91,4 @@ func (h *Hub) clientCount() int {
 	ch := make(chan int, 1)
 	h.Query <- ClientNumReq{reply: ch}
 	return <-ch
-}
-
-// Reads what the client sends, and closes clients when they are gone.
-func handleConnection(c *Client, broadcast chan []byte, unregister chan *Client) {
-	for {
-		line, err := c.Reader.ReadString('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				fmt.Println("Connection closed cleanly")
-			} else {
-				fmt.Printf("connection broke, not EOF: %v", err)
-			}
-			unregister <- c
-			return
-		}
-		broadcast <- []byte(line)
-	}
 }
