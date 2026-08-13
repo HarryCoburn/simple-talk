@@ -111,15 +111,15 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	chatClient.Out <- msg
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		t.Fatalf("ReadString failure.")
+		t.Fatalf("ReadString failure: %v", err)
 	}
 	if line != "Hello\n" {
 		t.Errorf("Client sent Hello, Output pipe got %v", line)
 	}
 	close(chatClient.Out)
-	line, err = reader.ReadString('\n')
-	if errors.Is(err, io.EOF) {
-		t.Errorf("Did not receive io.EOF after closing Out: %v", err)
+	_, err = reader.ReadString('\n')
+	if !errors.Is(err, io.EOF) {
+		t.Errorf("Did not receive io.EOF after closing Out: %T %v", err, err)
 	}
 }
 
