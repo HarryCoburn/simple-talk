@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestRegisterClient(t *testing.T) {
-	chatHub := newTestHub(t)
+	chatHub, _ := newTestHub(t)
 
 	// Testing
 	if got := chatHub.clientCount(); got != 0 {
@@ -29,7 +30,7 @@ func TestRegisterClient(t *testing.T) {
 }
 
 func TestDeregisterClient(t *testing.T) {
-	chatHub := newTestHub(t)
+	chatHub, _ := newTestHub(t)
 
 	// Make a client
 	chatClient := &Client{Out: make(chan Message, 1)}
@@ -54,7 +55,7 @@ func TestDeregisterClient(t *testing.T) {
 
 // Test if broadcasting works to connected clients
 func TestBroadcast(t *testing.T) {
-	chatHub := newTestHub(t)
+	chatHub, _ := newTestHub(t)
 	client1 := &Client{Name: "Alice", Out: make(chan Message, 1)}
 	client2 := &Client{Name: "Bob", Out: make(chan Message, 1)}
 	payload := []byte("Test")
@@ -88,7 +89,7 @@ func TestBroadcast(t *testing.T) {
 }
 
 func TestDroppedClientPath(t *testing.T) {
-	chatHub := newTestHub(t)
+	chatHub, _ := newTestHub(t)
 	client := &Client{Out: make(chan Message, 1)} // Make a channel with a tiny buffer
 	chatHub.Register <- client
 	payload1 := []byte("Test")
@@ -125,10 +126,10 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 }
 
 func TestReadLoop(t *testing.T) {
-	chatClient, _, _, out_channel := setUpTest(t)
+	testHelp := setUpTest(t)
 	chatHub := newHub()
-	go chatClient.readLoop(chatHub)
-	fmt.Fprintln(out_channel, "Hello")
+	go testHelp.Client.readLoop(chatHub)
+	fmt.Fprintln(testHelp.OutConn, "Hello")
 	var result Message
 	select {
 	case result = <-chatHub.Broadcast:
@@ -140,24 +141,203 @@ func TestReadLoop(t *testing.T) {
 	}
 }
 
-// Helpers
-
-func newTestHub(t *testing.T) *Hub {
+func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
+	testHelp := setUpTest(t)
 	chatHub := newHub()
-
-	// Start the chathub goroutine
-	go chatHub.run()
-	t.Cleanup(func() { close(chatHub.Done) })
-	return chatHub
+	go testHelp.Client.readLoop(chatHub)
+	testHelp.OutConn.Close()
+	var got *Client
+	select {
+	case got = <-chatHub.Unregister:
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("Timed out trying to TestReadLoopUnregister")
+	}
+	if testHelp.Client != got {
+		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Client, got)
+	}
 }
 
-func setUpTest(t *testing.T) (*Client, *bufio.Reader, net.Conn, net.Conn) {
-	in, out := net.Pipe()
-	chatClient := newClient(in)
-	reader := bufio.NewReader(out)
-	t.Cleanup(func() {
-		out.Close()
-		in.Close()
-	})
-	return chatClient, reader, in, out
+func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
+	testHelp := setUpTest(t)
+	chatHub := newHub()
+	go testHelp.Client.readLoop(chatHub)
+	testHelp.InConn.Close()
+	var got *Client
+	select {
+	case got = <-chatHub.Unregister:
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("Timed out trying to TestReadLoopClosingInChan")
+	}
+	if testHelp.Client != got {
+		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Client, got)
+	}
 }
+
+func TestDoneGuardsBroadcastSend(t *testing.T) {
+	testHelp := setUpTest(t)
+	chatHub := newHub()
+	exited := make(chan struct{})
+	go func() { testHelp.Client.readLoop(chatHub); close(exited) }()
+	fmt.Fprintln(testHelp.OutConn, "Hello")
+	close(chatHub.Done)
+	select {
+	case <-exited:
+		return
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("Sending to Done channel did not close Client")
+	}
+}
+
+func TestDoneGuardsUnregister(t *testing.T) {
+	testHelp := setUpTest(t)
+	chatHub := newHub()
+	exited := make(chan struct{})
+	go func() { testHelp.Client.readLoop(chatHub); close(exited) }()
+	close(chatHub.Done)
+	testHelp.OutConn.Close()
+	select {
+	case <-exited:
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("Sending to Done channel did not close Client")
+	}
+}
+
+func TestEndtoEnd(t *testing.T) {
+	alice := setUpTest(t)
+	alice.Client.Name = "Alice"
+	bob := setUpTest(t)
+	bob.Client.Name = "Bob"
+	chatHub, _ := newTestHub(t) // newTestHub() starts hub.run()
+
+	chatHub.Register <- alice.Client
+	go alice.Client.writeLoop()
+	go alice.Client.readLoop(chatHub)
+
+	chatHub.Register <- bob.Client
+	go bob.Client.writeLoop()
+	go bob.Client.readLoop(chatHub)
+
+	fmt.Fprintln(alice.OutConn, "Hello")
+	result, err := bob.Reader.ReadString('\n')
+	if result != "<Alice> Hello\n" {
+		t.Errorf("Did not receive end to end message. Received: %q", err)
+	}
+	// Echo check
+	result, err = alice.Reader.ReadString('\n')
+	if result != "<Alice> Hello\n" {
+		t.Errorf("Did not receive end to end message on echo. Received: %q", err)
+	}
+
+}
+
+func TestTeardownCascade(t *testing.T) {
+	alice := setUpTest(t)
+	alice.Client.Name = "Alice"
+	bob := setUpTest(t)
+	bob.Client.Name = "Bob"
+	chatHub, stop := newTestHub(t) // newTestHub() starts hub.run()
+
+	var wg sync.WaitGroup
+	for _, c := range []*Client{alice.Client, bob.Client} {
+		chatHub.Register <- c
+		wg.Add(2)
+		go func() { defer wg.Done(); c.writeLoop() }()
+		go func() { defer wg.Done(); c.readLoop(chatHub) }()
+	}
+
+	allDone := make(chan struct{})
+	go func() { wg.Wait(); close(allDone) }()
+
+	stop()
+	select {
+	case <-allDone:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Goroutines still running after Done was closed.")
+	}
+
+	if _, err := alice.OutConn.Write([]byte("x\n")); err == nil {
+		t.Error("Alice's connection was not closed.")
+	}
+	if _, err := bob.OutConn.Write([]byte("x\n")); err == nil {
+		t.Error("Bob's connection was not closed.")
+	}
+}
+
+func TestAcceptLoop(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Something went wrong opening the listener: %v", err)
+	}
+	chatHub, _ := newTestHub(t)
+	stopped := make(chan struct{})
+	go acceptLoop(chatHub, ln, stopped)
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Something went wrong dialing the listener: %v", err)
+	}
+	t.Cleanup(func() { conn.Close(); ln.Close() })
+	fmt.Fprintln(conn, "Hello")
+
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Errorf("Did not receive expected line in TestAcceptLoop: %q", err)
+	}
+	if line != "<Default> Hello\n" {
+		t.Errorf("acceptLoop made client, but message did not come through. Received: %q", line)
+	}
+
+	if chatHub.clientCount() != 1 {
+		t.Errorf("acceptLoop did not take in the dialed connection. Number of clients: %d", chatHub.clientCount())
+	}
+}
+
+func TestListenerClosure(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Something went wrong opening the listener: %v", err)
+	}
+	chatHub, _ := newTestHub(t)
+	stopped := make(chan struct{})
+	go acceptLoop(chatHub, ln, stopped)
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Something went wrong dialing the listener: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	ln.Close()
+	select {
+	case <-stopped:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Listener did not stop correctly.")
+	}
+}
+
+func TestListenerDoneBranch(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	t.Cleanup(func() { ln.Close() })
+	if err != nil {
+		t.Fatalf("Something went wrong opening the listener: %v", err)
+	}
+	chatHub, stop := newTestHub(t)
+	stopped := make(chan struct{})
+	go acceptLoop(chatHub, ln, stopped)
+	stop()
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Something went wrong dialing the listener: %v", err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Listener did not stop correctly.")
+	}
+	reader := bufio.NewReader(conn)
+	_, err = reader.ReadString('\n') // Expecting failure
+	if !errors.Is(err, io.EOF) {
+		t.Errorf("Received error: %v", err)
+	}
+
+}
+
+// Helpers

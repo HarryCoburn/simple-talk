@@ -8,7 +8,8 @@ type Hub struct {
 	Unregister chan *Client
 	Broadcast  chan Message
 	Query      chan ClientNumReq
-	Done       chan struct{}
+	Done       chan struct{} // Signal we're done with the hub. Begin teardown.
+	Finished   chan struct{} // Signal the hub is completely closed.
 }
 
 type Message struct {
@@ -24,12 +25,14 @@ func newHub() *Hub {
 		Broadcast:  make(chan Message),
 		Query:      make(chan ClientNumReq),
 		Done:       make(chan struct{}),
+		Finished:   make(chan struct{}),
 	}
 	return &hub
 }
 
 // The channels for the chat are processed here, as is the clientList
 func (h *Hub) run() {
+	defer close(h.Finished)
 	clientList := make(map[*Client]struct{})
 	for {
 		select {
