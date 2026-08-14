@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -123,6 +124,22 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	}
 }
 
+func TestReadLoop(t *testing.T) {
+	chatClient, _, _, out_channel := setUpTest(t)
+	chatHub := newHub()
+	go chatClient.readLoop(chatHub)
+	fmt.Fprintln(out_channel, "Hello")
+	var result Message
+	select {
+	case result = <-chatHub.Broadcast:
+	case <-time.After(time.Millisecond * 100):
+		t.Errorf("Timed out trying to TestReadLoop")
+	}
+	if string(result.Data) != "Hello\n" {
+		t.Errorf("TestReadLoop did not receive correct response: %q", string(result.Data))
+	}
+}
+
 // Helpers
 
 func newTestHub(t *testing.T) *Hub {
@@ -132,4 +149,15 @@ func newTestHub(t *testing.T) *Hub {
 	go chatHub.run()
 	t.Cleanup(func() { close(chatHub.Done) })
 	return chatHub
+}
+
+func setUpTest(t *testing.T) (*Client, *bufio.Reader, net.Conn, net.Conn) {
+	in, out := net.Pipe()
+	chatClient := newClient(in)
+	reader := bufio.NewReader(out)
+	t.Cleanup(func() {
+		out.Close()
+		in.Close()
+	})
+	return chatClient, reader, in, out
 }
