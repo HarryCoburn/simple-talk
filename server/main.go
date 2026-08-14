@@ -42,17 +42,22 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 			log.Printf("Error accepting a connection: %v\n", err)
 			continue
 		}
-		// A connection is detected. Make the client and send it to the hub.
-		newClient := newClient(conn)
-
-		select {
-		case hub.Register <- newClient:
-		case <-hub.Done:
-			conn.Close()
-			return
-		}
-		go newClient.writeLoop()
-		go newClient.readLoop(hub)
-
+		go handleConn(hub, conn)
 	}
+}
+
+func handleConn(hub *Hub, conn net.Conn) {
+	// A connection is detected. Make the client
+	newClient := newClient(conn)
+	newClient.setUserName()
+
+	select {
+	case hub.Register <- newClient:
+	case <-hub.Done:
+		conn.Close()
+		return
+	}
+	go newClient.writeLoop()
+	go newClient.readLoop(hub)
+
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
+	"time"
 )
 
 // An individual client connection.
@@ -66,4 +68,29 @@ func (c *Client) readLoop(hub *Hub) {
 			return
 		}
 	}
+}
+
+func (c *Client) setUserName() {
+	_, err := c.Writer.Write([]byte("Please state your username: \n"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = c.Writer.Flush()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	c.Connection.SetReadDeadline(time.Now().Add(30 * time.Second))
+	name, err := c.Reader.ReadString('\n')
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			fmt.Println("Connection closed cleanly")
+		} else {
+			fmt.Printf("connection broke, not EOF: %v", err)
+		}
+	}
+	c.Connection.SetReadDeadline(time.Time{})
+	// Add name validation here.
+	c.Name = strings.TrimSuffix(name, "\n")
 }
