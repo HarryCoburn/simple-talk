@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 )
@@ -32,6 +33,11 @@ func main() {
 func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 	defer close(stopped)
 	for {
+		select {
+		case <-hub.Done:
+			return
+		default:
+		}
 		// Listen for incoming connections
 		conn, err := ln.Accept()
 
@@ -49,7 +55,12 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 func handleConn(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the client
 	newClient := newClient(conn)
-	newClient.setUserName()
+	err := newClient.setUserName()
+	if err != nil {
+		fmt.Printf("Error setting user name. Closing. Error received: %v", err)
+		conn.Close()
+		return
+	}
 
 	select {
 	case hub.Register <- newClient:
