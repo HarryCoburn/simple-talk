@@ -10,13 +10,14 @@ import (
 
 func main() {
 	conn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
-	inputScanner := bufio.NewScanner(os.Stdin)
-	outputReader := bufio.NewReader(conn)
 	if err != nil {
 		log.Fatal("Client could not dial to the server.")
 	}
+	inputScanner := bufio.NewScanner(os.Stdin)
+	outputReader := bufio.NewReader(conn)
 
 	ch := make(chan struct{})
+
 	go sendClientInput(inputScanner, conn)
 	go acceptServerOutput(outputReader, ch)
 	<-ch
@@ -39,6 +40,6 @@ func acceptServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
 			ch <- struct{}{}
 			return
 		}
-		fmt.Println(status)
+		fmt.Print(status)
 	}
 }
