@@ -12,7 +12,7 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
-const userNamePrompt = "Please state your username: \n"
+const userNamePrompt = "Please state your username: "
 
 func main() {
 	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
@@ -28,7 +28,7 @@ func main() {
 	}
 }
 
-func setUserName(conn *protocol.FullConn, inputScanner *bufio.Scanner) error {
+func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) error {
 	fmt.Println(userNamePrompt)
 	for { // To handle reasking if there's a problem. Break if successful.
 		// Get a name and clean it properly

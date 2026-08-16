@@ -11,39 +11,23 @@ import (
 type Conn struct {
 	conn net.Conn
 	r    *bufio.Reader
-	mu   sync.Mutex
+	mu   sync.Mutex // For guarding write operations.
 	enc  *json.Encoder
 }
 
 func NewConn(c net.Conn) *Conn {
-	writer := bufio.NewWriter(c)
 	return &Conn{
 		conn: c,
 		r:    bufio.NewReader(c),
 		mu:   sync.Mutex{},
-		enc:  json.NewEncoder(writer),
+		enc:  json.NewEncoder(c),
 	}
 }
 
 func (c *Conn) SendFrame(f Frame) error {
-	switch f.Kind {
-	case KindHandshake:
-		// First, validate the string and cut off any newlines
-
-		marshalledJson, err := json.Marshal(f)
-		if err != nil {
-			log.Fatalf("Failed to marshal JSON in Send")
-		}
-		c.mu.Lock()
-		c.w.Write(marshalledJson)
-		err = c.w.Flush()
-		if err != nil {
-			log.Fatalf("Failure to flush on send.")
-		}
-		c.mu.Unlock()
-		return nil
-	}
-	return nil // For now. Return an error if the kind is wrong.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.enc.Encode(f) // If this starts failing, close the client.
 }
 
 func (c *Conn) SendHandshake(name string) error {
@@ -55,15 +39,11 @@ func (c *Conn) SendHandshake(name string) error {
 		return err
 	}
 
-	err = c.SendFrame(Frame{
+	return c.SendFrame(Frame{
 		Kind:    KindHandshake,
 		Payload: hsEnc,
 	})
 
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (c *Conn) Recv() (Frame, error) {
