@@ -2,13 +2,17 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
+
+const userNamePrompt = "Please state your username: \n"
 
 func main() {
 	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
@@ -17,15 +21,16 @@ func main() {
 	}
 
 	conn := protocol.NewConn(bareConn)
+	userName, err := setUserName()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	inputScanner := bufio.NewScanner(os.Stdin)
-	outputReader := bufio.NewReader(conn)
+	// ch := make(chan struct{})
 
-	ch := make(chan struct{})
-
-	go sendClientInput(inputScanner, conn)
-	go acceptServerOutput(outputReader, ch)
-	<-ch
+	// go sendClientInput(inputScanner, conn)
+	// go acceptServerOutput(outputReader, ch)
+	// <-ch
 }
 
 func sendClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
@@ -47,4 +52,15 @@ func acceptServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
 		}
 		fmt.Print(status)
 	}
+}
+
+func setUserName() (string, error) {
+	inputScanner := bufio.NewScanner(os.Stdin)
+	fmt.Println(userNamePrompt)
+	if inputScanner.Scan() {
+		input := inputScanner.Text()
+		return strings.TrimSuffix(input, "\n"), nil // Send this in a handshake for validation.
+	}
+	return "", errors.New("Username Failure.")
+
 }
