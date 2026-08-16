@@ -149,7 +149,7 @@ func (c *Conn) readLine() ([]byte, error) {
 func (c *Conn) Recv() (Frame, error) {
 	line, err := c.readLine()
 	if err != nil {
-		return Frame{}, nil
+		return Frame{}, err
 	}
 
 	line = bytes.TrimRight(line, "\r\n")
