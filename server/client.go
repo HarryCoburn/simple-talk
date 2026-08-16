@@ -1,37 +1,33 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 	"time"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 // An individual client connection.
 type Client struct {
-	Connection net.Conn      // The TCP connection of the Client
-	Name       string        // The username of the Client
-	Writer     *bufio.Writer // To write to other TCP connections
-	Reader     *bufio.Reader // To receive from other TCP connections
-	Out        chan Message  // The message channel queue
+	Conn *protocol.Conn      // The protocol connection
+	Name string              // The username of the Client
+	Out  chan protocol.Frame // The message channel queue
 }
 
-func newClient(conn net.Conn) *Client {
+func newClient(conn *protocol.Conn, name string) *Client {
 	return &Client{
-		Connection: conn,
-		Name:       "Default",
-		Writer:     bufio.NewWriter(conn),
-		Reader:     bufio.NewReader(conn),
-		Out:        make(chan Message, 256),
+		Conn: conn,
+		Name: name,
+		Out:  make(chan protocol.Frame, 256),
 	}
 }
 
 const userNamePrompt = "Please state your username: \n"
 
-func (c *Client) proceessClientOutQueue() {
+func (c *Client) processClientOutQueue() {
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
 	defer c.Connection.Close()
 	for output := range c.Out {

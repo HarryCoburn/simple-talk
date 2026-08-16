@@ -24,8 +24,22 @@ func main() {
 	conn := protocol.NewConn(bareConn)
 	err = setUserName(conn, inputScanner)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("Problem with setting username: %v", err)
+		conn.Close()
 	}
+
+	f, err := conn.Recv()
+	if err != nil {
+		fmt.Printf("Problem with receiving frame for handshakeAck: %v", err)
+		conn.Close()
+	}
+	if f.Kind != protocol.KindHandshakeAck {
+		fmt.Printf("Expected handshakeAck, did not receive: %v", err)
+		conn.Close()
+	}
+
+	// And now do we need Goroutines here for extra stuff,
+	// or does the server handle everything now?
 }
 
 func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) error {

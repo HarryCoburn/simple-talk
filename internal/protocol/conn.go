@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 const (
-	MaxFrameSize   = 8192
-	maxDiscardSize = MaxFrameSize * 4
+	MaxFrameSize     = 8192
+	maxDiscardSize   = MaxFrameSize * 4
+	HandshakeTimeout = (time.Second * 30)
 )
 
 var (
@@ -55,6 +57,51 @@ func (c *Conn) SendHandshake(name string) error {
 	return c.SendFrame(Frame{
 		Kind:    KindHandshake,
 		Payload: hsEnc,
+	})
+
+}
+
+func (c *Conn) SendHandshakeAck(name string) error {
+	hs := HandshakeAck{
+		Name: name,
+	}
+	hsEnc, err := json.Marshal(hs)
+	if err != nil {
+		return err
+	}
+
+	return c.SendFrame(Frame{
+		Kind:    KindHandshakeAck,
+		Payload: hsEnc,
+	})
+}
+
+func (c *Conn) SendChat(sender string, msg string) error {
+	cha := Chat{
+		From: sender,
+		Text: msg,
+	}
+	chaEnc, err := json.Marshal(cha)
+	if err != nil {
+		return err
+	}
+	return c.SendFrame(Frame{
+		Kind:    KindChat,
+		Payload: chaEnc,
+	})
+}
+
+func (c *Conn) SendError(e string) error {
+	errM := Error{
+		Message: e,
+	}
+	errEnc, err := json.Marshal(errM)
+	if err != nil {
+		return err
+	}
+	return c.SendFrame(Frame{
+		Kind:    KindError,
+		Payload: errEnc,
 	})
 
 }
@@ -124,4 +171,12 @@ func (c *Conn) Recv() (Frame, error) {
 		f.Payload = append(json.RawMessage(nil), f.Payload...)
 	}
 	return f, nil
+}
+
+func (c *Conn) SetReadDeadline(t time.Time) error {
+	return c.conn.SetReadDeadline(t)
+}
+
+func (c *Conn) Close() error {
+	return c.conn.Close()
 }

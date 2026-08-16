@@ -1,10 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+	"time"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 // A struct for requesting the number of clients connected
@@ -53,13 +57,17 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 
 func handleNewConn(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the client
-	newClient := newClient(conn)
-	err := newClient.setUserName()
+	fullc := protocol.NewConn(conn)
+	clientName, err := verifyName(hub, fullc)
 	if err != nil {
-		fmt.Printf("Error setting user name. Closing. Error received: %v", err)
-		conn.Close()
+		fmt.Println(err)
+		fullc.Close()
 		return
 	}
+
+	newClient := newClient(fullc, clientName)
+
+	err = fullc.SendHandshakeAck(clientName)
 
 	select {
 	case hub.Register <- newClient:
@@ -67,7 +75,34 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		conn.Close()
 		return
 	}
-	go newClient.proceessClientOutQueue()
+	go newClient.processClientOutQueue()
 	go newClient.readClientInput(hub)
+}
 
+func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
+	// Get the frame for name entry.
+	fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout))
+	f, err := fullc.Recv()
+	if err != nil {
+		return "", fmt.Errorf("Problem with handshake frame: %v", err)
+	}
+	fullc.SetReadDeadline(time.Time{})
+
+	// Is it the right kind?
+	if f.Kind != protocol.KindHandshake {
+		return "", fmt.Errorf("Wrong frame type sent in handshake! : %v", err)
+	}
+
+	var hs protocol.Handshake
+	json.Unmarshal(f.Payload, &hs)
+	clientName := hs.Name
+
+	for c := range hub.clientList {
+		if c.Name == clientName {
+			// Name collision
+			return "", fmt.Errorf("Name already taken. Choose another")
+		}
+	}
+
+	return clientName, nil
 }
