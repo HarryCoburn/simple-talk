@@ -37,11 +37,6 @@ func main() {
 func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 	defer close(stopped)
 	for {
-		// select {
-		// case <-hub.Done:
-		// 	return
-		// default:
-		// }
 		// Listen for incoming connections
 		conn, err := ln.Accept()
 
@@ -52,11 +47,11 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 			log.Printf("Error accepting a connection: %v\n", err)
 			continue
 		}
-		go handleConn(hub, conn)
+		go handleNewConn(hub, conn)
 	}
 }
 
-func handleConn(hub *Hub, conn net.Conn) {
+func handleNewConn(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the client
 	newClient := newClient(conn)
 	err := newClient.setUserName()

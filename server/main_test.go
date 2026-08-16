@@ -338,14 +338,14 @@ func TestAcceptLoopExitsWhenListenerCloses(t *testing.T) {
 	}
 }
 
-func TestHandleConnClosesWhenHubIsDone(t *testing.T) {
+func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	serverSide, clientSide := net.Pipe()
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
 	chatHub := newHub()
 	close(chatHub.Done)
 
-	go handleConn(chatHub, serverSide)
+	go handleNewConn(chatHub, serverSide)
 	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatalf("Could not set a deadline: %v", err)
 	}
