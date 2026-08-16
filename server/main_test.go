@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 func TestRegisterClient(t *testing.T) {
@@ -21,7 +23,7 @@ func TestRegisterClient(t *testing.T) {
 	}
 
 	// Register a client
-	chatHub.Register <- &Client{Out: make(chan Message, 1)}
+	chatHub.Register <- &Client{Out: make(chan protocol.Frame, 1)}
 
 	if got := chatHub.clientCount(); got != 1 {
 		t.Errorf("Expected length 1, got %d", got)
@@ -33,7 +35,7 @@ func TestDeregisterClient(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	// Make a client
-	chatClient := &Client{Out: make(chan Message, 1)}
+	chatClient := &Client{Out: make(chan protocol.Frame, 1)}
 
 	// Register, then deregister the client
 	chatHub.Register <- chatClient
@@ -56,46 +58,56 @@ func TestDeregisterClient(t *testing.T) {
 // Test if broadcasting works to connected clients
 func TestBroadcast(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	client1 := &Client{Name: "Alice", Out: make(chan Message, 1)}
-	client2 := &Client{Name: "Bob", Out: make(chan Message, 1)}
-	payload := []byte("Test")
-	msg := Message{
-		From: client1,
-		Data: payload,
+	client1 := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	client2 := &Client{Name: "Bob", Out: make(chan protocol.Frame, 1)}
+
+	payload := protocol.Chat{
+		From: "Alice",
+		Text: "Test",
+	}
+	enc, _ := json.Marshal(payload)
+	f := protocol.Frame{
+		Kind:    protocol.KindChat,
+		Payload: enc,
 	}
 	chatHub.Register <- client1
 	chatHub.Register <- client2
-	chatHub.Broadcast <- msg
-	var read1 []byte
-	var read2 []byte
+	chatHub.Broadcast <- f
+	var f1 protocol.Frame
+	var f2 protocol.Frame
 	select {
 	case m := <-client1.Out:
-		read1 = m.Data
+		f1 = m
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read1")
 	}
 	select {
 	case m := <-client2.Out:
-		read2 = m.Data
+		f2 = m
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read2")
 	}
-	if !bytes.Equal(read1, []byte("<Alice> Test")) {
-		t.Errorf("client1 got %q, want %q", read1, []byte("<Alice> Test"))
+	var p1 protocol.Chat
+	var p2 protocol.Chat
+	json.Unmarshal(f1.Payload, &p1)
+	json.Unmarshal(f2.Payload, &p2)
+
+	if !(p1.Text == "<Alice> Test") {
+		t.Errorf("client1 got %q, want %q", p1.Text, "<Alice> Test")
 	}
-	if !bytes.Equal(read2, []byte("<Alice> Test")) {
-		t.Errorf("client2 got %q, want %q", read2, []byte("<Bob> Test"))
+	if !(p2.Text == "<Alice> Test") {
+		t.Errorf("client1 got %q, want %q", p2.Text, "<Alice> Test")
 	}
 }
 
 func TestDroppedClientPath(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	client := &Client{Out: make(chan Message, 1)} // Make a channel with a tiny buffer
+	client := &Client{Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
 	chatHub.Register <- client
 	payload1 := []byte("Test")
 	payload2 := []byte("Received")
-	chatHub.Broadcast <- Message{From: client, Data: payload1} // Fill buffer
-	chatHub.Broadcast <- Message{From: client, Data: payload2} // Overload Client.Out, which should force server to drop the client.
+	chatHub.Broadcast <- protocol.Frame{Kind: protocol.KindChat, Payload: payload1} // Fill buffer
+	chatHub.Broadcast <- protocol.Frame{Kind: protocol.KindChat, Payload: payload2} // Overload Client.Out, which should force server to drop the client.
 
 	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0, got %d", got)
@@ -106,11 +118,13 @@ func TestDroppedClientPath(t *testing.T) {
 func TestWriteLoopWriteAndClose(t *testing.T) {
 	in, out := net.Pipe()
 	t.Cleanup(func() { out.Close() })
-	chatClient := newClient(in)
-	go chatClient.proceessClientOutQueue()
+	fullc := protocol.NewConn(in)
+	chatClient := newClient(fullc, "Harry")
+	go chatClient.processClientOutQueue()
 	reader := bufio.NewReader(out)
-	msg := Message{From: chatClient, Data: []byte("Hello\n")}
-	chatClient.Out <- msg
+	payload := "Hello\n"
+	enc, _ := json.Marshal(payload)
+	chatClient.Out <- protocol.Frame{Kind: protocol.KindChat, Payload: enc}
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		t.Fatalf("ReadString failure: %v", err)
@@ -130,14 +144,16 @@ func TestReadLoop(t *testing.T) {
 	chatHub := newHub()
 	go testHelp.Client.readClientInput(chatHub)
 	fmt.Fprintln(testHelp.OutConn, "Hello")
-	var result Message
+	var result protocol.Frame
 	select {
 	case result = <-chatHub.Broadcast:
 	case <-time.After(time.Millisecond * 100):
 		t.Errorf("Timed out trying to TestReadLoop")
 	}
-	if string(result.Data) != "Hello\n" {
-		t.Errorf("TestReadLoop did not receive correct response: %q", string(result.Data))
+	var unpack protocol.Chat
+	json.Unmarshal(result.Payload, &unpack)
+	if unpack.Text != "Hello\n" {
+		t.Errorf("TestReadLoop did not receive correct response: %q", unpack.Text)
 	}
 }
 
@@ -210,11 +226,11 @@ func TestEndtoEnd(t *testing.T) {
 	chatHub, _ := newTestHub(t) // newTestHub() starts hub.run()
 
 	chatHub.Register <- alice.Client
-	go alice.Client.proceessClientOutQueue()
+	go alice.Client.processClientOutQueue()
 	go alice.Client.readClientInput(chatHub)
 
 	chatHub.Register <- bob.Client
-	go bob.Client.proceessClientOutQueue()
+	go bob.Client.processClientOutQueue()
 	go bob.Client.readClientInput(chatHub)
 
 	fmt.Fprintln(alice.OutConn, "Hello")
@@ -241,7 +257,7 @@ func TestTeardownCascade(t *testing.T) {
 	for _, c := range []*Client{alice.Client, bob.Client} {
 		chatHub.Register <- c
 		wg.Add(2)
-		go func() { defer wg.Done(); c.proceessClientOutQueue() }()
+		go func() { defer wg.Done(); c.processClientOutQueue() }()
 		go func() { defer wg.Done(); c.readClientInput(chatHub) }()
 	}
 

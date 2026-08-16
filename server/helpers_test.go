@@ -5,6 +5,8 @@ import (
 	"net"
 	"sync"
 	"testing"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 // Contains helper functions for testing.
@@ -31,11 +33,13 @@ func newTestHub(t *testing.T) (*Hub, func()) {
 
 func setUpTest(t *testing.T) testHelper {
 	in, out := net.Pipe()
-	chatClient := newClient(in)
+	conn := protocol.NewConn(in)
+	chatClient := newClient(conn, "test")
 	reader := bufio.NewReader(out)
 	t.Cleanup(func() {
 		out.Close()
 		in.Close()
+		conn.Close()
 	})
 	return testHelper{
 		Client:  chatClient,
