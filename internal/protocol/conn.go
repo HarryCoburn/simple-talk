@@ -45,19 +45,27 @@ func (c *Conn) SendFrame(f Frame) error {
 	return c.enc.Encode(f) // If this starts failing, close the client.
 }
 
+func newFrame(kind Kind, payload any) (Frame, error) {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return Frame{}, err
+	}
+
+	return Frame{
+		Kind:    kind,
+		Payload: encoded,
+	}, nil
+}
+
 func (c *Conn) SendHandshake(name string) error {
 	hs := Handshake{
 		Name: name,
 	}
-	hsEnc, err := json.Marshal(hs)
+	f, err := newFrame(KindHandshake, hs)
 	if err != nil {
 		return err
 	}
-
-	return c.SendFrame(Frame{
-		Kind:    KindHandshake,
-		Payload: hsEnc,
-	})
+	return c.SendFrame(f)
 
 }
 
@@ -65,15 +73,11 @@ func (c *Conn) SendHandshakeAck(name string) error {
 	hs := HandshakeAck{
 		Name: name,
 	}
-	hsEnc, err := json.Marshal(hs)
+	f, err := newFrame(KindHandshakeAck, hs)
 	if err != nil {
 		return err
 	}
-
-	return c.SendFrame(Frame{
-		Kind:    KindHandshakeAck,
-		Payload: hsEnc,
-	})
+	return c.SendFrame(f)
 }
 
 func (c *Conn) SendChat(sender string, msg string) error {
@@ -81,28 +85,22 @@ func (c *Conn) SendChat(sender string, msg string) error {
 		From: sender,
 		Text: msg,
 	}
-	chaEnc, err := json.Marshal(cha)
+	f, err := newFrame(KindChat, cha)
 	if err != nil {
 		return err
 	}
-	return c.SendFrame(Frame{
-		Kind:    KindChat,
-		Payload: chaEnc,
-	})
+	return c.SendFrame(f)
 }
 
 func (c *Conn) SendError(e string) error {
 	errM := Error{
 		Message: e,
 	}
-	errEnc, err := json.Marshal(errM)
+	f, err := newFrame(KindHandshake, errM)
 	if err != nil {
 		return err
 	}
-	return c.SendFrame(Frame{
-		Kind:    KindError,
-		Payload: errEnc,
-	})
+	return c.SendFrame(f)
 
 }
 
