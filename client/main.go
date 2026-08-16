@@ -20,47 +20,49 @@ func main() {
 		log.Fatal("Client could not dial to the server.")
 	}
 
+	inputScanner := bufio.NewScanner(os.Stdin)
 	conn := protocol.NewConn(bareConn)
-	userName, err := setUserName()
+	err = setUserName(conn, inputScanner)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// ch := make(chan struct{})
-
-	// go sendClientInput(inputScanner, conn)
-	// go acceptServerOutput(outputReader, ch)
-	// <-ch
 }
 
-func sendClientInput(inputScanner *bufio.Scanner, conn net.Conn) {
-	for {
+func setUserName(conn *protocol.FullConn, inputScanner *bufio.Scanner) error {
+	fmt.Println(userNamePrompt)
+	for { // To handle reasking if there's a problem. Break if successful.
+		// Get a name and clean it properly
 		if inputScanner.Scan() {
 			input := inputScanner.Text()
-			fmt.Fprintln(conn, input)
+			cleaned, err := cleanUserName(input)
+			if err != nil {
+				fmt.Println("Error in input. Try again")
+				fmt.Println(userNamePrompt)
+				continue
+			}
+			// Try to send it to the server for further validation
+			err = conn.SendHandshake(cleaned)
+			if err != nil {
+				log.Fatal(err)
+			}
+			// Check the response
+			resp, err := conn.Recv()
+			if err != nil {
+				log.Fatalf("Receive error while setting username: %v", err)
+			}
+			if resp.Kind != protocol.KindHandshakeAck {
+				log.Fatalf("Didn't receive handshake ack from server")
+			}
+			// Valid.
+			return nil
 		}
+
+		return errors.New("Username Failure.")
 	}
+
 }
 
-func acceptServerOutput(outputReader *bufio.Reader, ch chan struct{}) {
-	for {
-		status, err := outputReader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Got an error or exit request")
-			ch <- struct{}{}
-			return
-		}
-		fmt.Print(status)
-	}
-}
-
-func setUserName() (string, error) {
-	inputScanner := bufio.NewScanner(os.Stdin)
-	fmt.Println(userNamePrompt)
-	if inputScanner.Scan() {
-		input := inputScanner.Text()
-		return strings.TrimSuffix(input, "\n"), nil // Send this in a handshake for validation.
-	}
-	return "", errors.New("Username Failure.")
-
+func cleanUserName(name string) (string, error) {
+	// TODO, consider validation rules. Pass for now with assumptions.
+	return strings.TrimSuffix(name, "\n"), nil
 }
