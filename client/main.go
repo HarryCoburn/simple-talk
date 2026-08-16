@@ -6,13 +6,18 @@ import (
 	"log"
 	"net"
 	"os"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 func main() {
-	conn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
+	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
 	if err != nil {
 		log.Fatal("Client could not dial to the server.")
 	}
+
+	conn := protocol.NewConn(bareConn)
+
 	inputScanner := bufio.NewScanner(os.Stdin)
 	outputReader := bufio.NewReader(conn)
 

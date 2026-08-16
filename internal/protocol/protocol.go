@@ -1,6 +1,6 @@
 // Protocol for SimpleTalk
 
-package internal
+package protocol
 
 import "encoding/json"
 
