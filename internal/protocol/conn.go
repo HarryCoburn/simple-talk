@@ -96,7 +96,7 @@ func (c *Conn) SendError(e string) error {
 	errM := Error{
 		Message: e,
 	}
-	f, err := newFrame(KindHandshake, errM)
+	f, err := newFrame(KindError, errM)
 	if err != nil {
 		return err
 	}

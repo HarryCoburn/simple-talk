@@ -68,6 +68,11 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	newClient := newClient(fullc, clientName)
 
 	err = fullc.SendHandshakeAck(clientName)
+	if err != nil {
+		fmt.Println(err)
+		fullc.Close()
+		return
+	}
 
 	select {
 	case hub.Register <- newClient:
@@ -94,7 +99,10 @@ func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
 	}
 
 	var hs protocol.Handshake
-	json.Unmarshal(f.Payload, &hs)
+	err = json.Unmarshal(f.Payload, &hs)
+	if err != nil {
+		return "", fmt.Errorf("Something wrong with the name payload: %v", err)
+	}
 	clientName := hs.Name
 
 	for c := range hub.clientList {
