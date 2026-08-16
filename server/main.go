@@ -25,6 +25,10 @@ func main() {
 	// Perhaps turn killServer into a select call.
 	killServer := make(chan struct{})
 	go hub.run()
+	go func() {
+		<-hub.Done
+		ln.Close()
+	}()
 	go acceptLoop(hub, ln, killServer)
 	<-killServer
 }
@@ -33,11 +37,11 @@ func main() {
 func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 	defer close(stopped)
 	for {
-		select {
-		case <-hub.Done:
-			return
-		default:
-		}
+		// select {
+		// case <-hub.Done:
+		// 	return
+		// default:
+		// }
 		// Listen for incoming connections
 		conn, err := ln.Accept()
 

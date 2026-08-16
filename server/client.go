@@ -29,6 +29,8 @@ func newClient(conn net.Conn) *Client {
 	}
 }
 
+const userNamePrompt = "Please state your username: \n"
+
 func (c *Client) writeLoop() {
 	defer c.Connection.Close()
 	for output := range c.Out {
@@ -71,7 +73,7 @@ func (c *Client) readLoop(hub *Hub) {
 }
 
 func (c *Client) setUserName() error {
-	_, err := c.Writer.Write([]byte("Please state your username: \n"))
+	_, err := c.Writer.Write([]byte(userNamePrompt))
 	if err != nil {
 		fmt.Println(err)
 		return err

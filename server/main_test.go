@@ -266,78 +266,104 @@ func TestTeardownCascade(t *testing.T) {
 func TestAcceptLoop(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("Something went wrong opening the listener: %v", err)
+		t.Fatalf("Coult not open the listener: %v", err)
 	}
+	t.Cleanup(func() { ln.Close() })
+
 	chatHub, _ := newTestHub(t)
 	stopped := make(chan struct{})
 	go acceptLoop(chatHub, ln, stopped)
+
 	conn, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
-		t.Fatalf("Something went wrong dialing the listener: %v", err)
-	}
-	t.Cleanup(func() { conn.Close(); ln.Close() })
-	fmt.Fprintln(conn, "Hello")
-
-	reader := bufio.NewReader(conn)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		t.Errorf("Did not receive expected line in TestAcceptLoop: %q", err)
-	}
-	if line != "<Default> Hello\n" {
-		t.Errorf("acceptLoop made client, but message did not come through. Received: %q", line)
-	}
-
-	if chatHub.clientCount() != 1 {
-		t.Errorf("acceptLoop did not take in the dialed connection. Number of clients: %d", chatHub.clientCount())
-	}
-}
-
-func TestListenerClosure(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Something went wrong opening the listener: %v", err)
-	}
-	chatHub, _ := newTestHub(t)
-	stopped := make(chan struct{})
-	go acceptLoop(chatHub, ln, stopped)
-	conn, err := net.Dial("tcp", ln.Addr().String())
-	if err != nil {
-		t.Fatalf("Something went wrong dialing the listener: %v", err)
+		t.Fatalf("Could not dial the listener: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	ln.Close()
-	select {
-	case <-stopped:
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Listener did not stop correctly.")
+
+	// Bound every read, so a stalled server fails this test in two seconds
+	// instead of hanging the binary until the ten second panic.
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("Could not set a read deadline: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+
+	prompt, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Did not receive the username prompt: %v", err)
+	}
+	if prompt != userNamePrompt {
+		t.Fatalf("Wanted prompt %q, got %q", userNamePrompt, prompt)
+	}
+
+	// Pipelined deliberately. "Hello\n" can fall into the same bufio.Reader
+	// that setUserName reads from. readLoop has to inherit that reader rather than
+	// construct its own.
+	fmt.Fprintln(conn, "Harry")
+	fmt.Fprintln(conn, "Hello")
+
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Errorf("Did not receive the broadcast: %v", err)
+	}
+
+	if line != "<Harry> Hello\n" {
+		t.Errorf("Wanted %q, got %q", "<Harry> Hello\n", line)
+	}
+
+	if got := chatHub.clientCount(); got != 1 {
+		t.Errorf("Wanted 1 registered client. got %d", got)
 	}
 }
 
-func TestListenerDoneBranch(t *testing.T) {
+func TestAcceptLoopExitsWhenListenerCloses(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	t.Cleanup(func() { ln.Close() })
 	if err != nil {
 		t.Fatalf("Something went wrong opening the listener: %v", err)
 	}
-	chatHub, stop := newTestHub(t)
+	chatHub, _ := newTestHub(t)
 	stopped := make(chan struct{})
 	go acceptLoop(chatHub, ln, stopped)
-	stop()
-	conn, err := net.Dial("tcp", ln.Addr().String())
-	if err != nil {
-		t.Fatalf("Something went wrong dialing the listener: %v", err)
-	}
+
+	// conn, err := net.Dial("tcp", ln.Addr().String())
+	// if err != nil {
+	// 	t.Fatalf("Something went wrong dialing the listener: %v", err)
+	// }
+	// t.Cleanup(func() { conn.Close() })
+	ln.Close()
+
 	select {
 	case <-stopped:
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Listener did not stop correctly.")
+		t.Fatal("acceptLoop did not exit after the listener closed.")
 	}
-	reader := bufio.NewReader(conn)
-	_, err = reader.ReadString('\n') // Expecting failure
-	if !errors.Is(err, io.EOF) {
-		t.Errorf("Received error: %v", err)
-	}
-
 }
 
-// Helpers
+func TestHandleConnClosesWhenHubIsDone(t *testing.T) {
+	serverSide, clientSide := net.Pipe()
+	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
+
+	chatHub := newHub()
+	close(chatHub.Done)
+
+	go handleConn(chatHub, serverSide)
+	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("Could not set a deadline: %v", err)
+	}
+
+	reader := bufio.NewReader(clientSide)
+
+	prompt, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Did not receive the username prompt: %v", err)
+	}
+	if prompt != userNamePrompt {
+		t.Fatalf("Wanted prompt %q, got %q", userNamePrompt, prompt)
+	}
+
+	fmt.Fprintln(clientSide, "Harry")
+	// Register has no receiver and Done is closed, so the select is deterministic:
+	// handleConn takes the Done branch and closes the connection.
+	if _, err := reader.ReadString('\n'); !errors.Is(err, io.EOF) {
+		t.Errorf("Wanted io.EOF after a post-shutdown handshake, got %v", err)
+	}
+}
