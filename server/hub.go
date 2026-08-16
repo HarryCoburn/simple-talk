@@ -1,11 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
+)
 
 type Hub struct {
 	Register   chan *Client         // Register a new client
 	Unregister chan *Client         // Unregister a client
-	Broadcast  chan Message         // Send a message to all clients
+	Broadcast  chan protocol.Frame  // Send a frame to all clients
 	Query      chan ClientNumReq    // Send a query to the server
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
@@ -22,7 +26,7 @@ func newHub() *Hub {
 	hub := Hub{
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
-		Broadcast:  make(chan Message),
+		Broadcast:  make(chan protocol.Frame),
 		Query:      make(chan ClientNumReq),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
@@ -45,12 +49,11 @@ func (h *Hub) run() {
 		case c := <-h.Unregister:
 			fmt.Println("Received an unregistration request")
 			h.closeClient(c)
-		case msg := <-h.Broadcast:
-			msg.Data = fmt.Appendf(nil, messageFormat, msg.From.Name, msg.Data)
+		case f := <-h.Broadcast:
 			// Fanout. TODO, a field in Message to know to do a private send?
 			for c := range h.clientList {
 				select {
-				case c.Out <- msg:
+				case c.Out <- f:
 				default: // If a c.Out cannot be reached, assume the client has left and close it.
 					h.closeClient(c)
 				}

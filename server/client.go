@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
-	"time"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -29,10 +27,10 @@ const userNamePrompt = "Please state your username: \n"
 
 func (c *Client) processClientOutQueue() {
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
-	defer c.Connection.Close()
-	for output := range c.Out {
-		c.Writer.Write(output.Data)
-		err := c.Writer.Flush() // Writes the output to the console.
+	defer c.Conn.Close()
+	for frame := range c.Out {
+		// Out should hold a completed frame
+		err := c.Conn.SendFrame(frame)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -43,7 +41,7 @@ func (c *Client) processClientOutQueue() {
 func (c *Client) readClientInput(hub *Hub) {
 	for {
 		// Reads what the client writes. Closes client safely if there is a problem with reading.
-		line, err := c.Reader.ReadString('\n')
+		frame, err := c.Conn.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				fmt.Println("Connection closed cleanly")
@@ -57,35 +55,22 @@ func (c *Client) readClientInput(hub *Hub) {
 				return
 			}
 		}
-		// Take what client wrote and place it into a Message struct for sending
+
+		if frame.Kind != protocol.KindChat {
+			fmt.Printf("Didn't receive a chat. Problem!")
+			select {
+			case hub.Unregister <- c:
+				return
+			case <-hub.Done:
+				return
+			}
+		}
+
+		// Send the frame on
 		select {
-		case hub.Broadcast <- Message{From: c, Data: []byte(line)}:
+		case hub.Broadcast <- frame:
 		case <-hub.Done:
 			return
 		}
 	}
-}
-
-func (c *Client) setUserName() error {
-	c.Writer.Write([]byte(userNamePrompt))
-	err := c.Writer.Flush()
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	c.Connection.SetReadDeadline(time.Now().Add(30 * time.Second))
-	name, err := c.Reader.ReadString('\n')
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			fmt.Println("Connection closed cleanly")
-			return err
-		} else {
-			fmt.Printf("connection broke, not EOF: %v", err)
-			return err
-		}
-	}
-	c.Connection.SetReadDeadline(time.Time{})
-	// Add name validation here.
-	c.Name = strings.TrimSuffix(name, "\n")
-	return nil
 }
