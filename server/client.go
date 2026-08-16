@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,8 +23,6 @@ func newClient(conn *protocol.Conn, name string) *Client {
 		Out:  make(chan protocol.Frame, 256),
 	}
 }
-
-const userNamePrompt = "Please state your username: \n"
 
 func (c *Client) processClientOutQueue() {
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
@@ -64,6 +63,19 @@ func (c *Client) readClientInput(hub *Hub) {
 			case <-hub.Done:
 				return
 			}
+		}
+
+		// Restamp the sender. The client supplies its own From field, which we
+		// don't trust; the name agreed during the handshake is authoritative.
+		var chat protocol.Chat
+		if err := json.Unmarshal(frame.Payload, &chat); err != nil {
+			fmt.Printf("Discarding unreadable chat payload: %v\n", err)
+			continue
+		}
+		frame, err = protocol.NewChatFrame(c.Name, chat.Text)
+		if err != nil {
+			fmt.Printf("Could not rebuild the chat frame: %v\n", err)
+			continue
 		}
 
 		// Send the frame on

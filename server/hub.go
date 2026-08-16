@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -11,14 +13,10 @@ type Hub struct {
 	Unregister chan *Client         // Unregister a client
 	Broadcast  chan protocol.Frame  // Send a frame to all clients
 	Query      chan ClientNumReq    // Send a query to the server
+	NameTaken  chan NameReq         // Ask whether a username is already in use
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
 	clientList map[*Client]struct{} // Map of all clients.
-}
-
-type Message struct {
-	From *Client // Address of the client that sent the message
-	Data []byte  // Content of the message
 }
 
 // Create a new hub
@@ -28,6 +26,7 @@ func newHub() *Hub {
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan protocol.Frame),
 		Query:      make(chan ClientNumReq),
+		NameTaken:  make(chan NameReq),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
@@ -44,13 +43,21 @@ func (h *Hub) run() {
 	for {
 		select {
 		case c := <-h.Register:
-			fmt.Println("Received a registration request.")
 			h.clientList[c] = struct{}{}
 		case c := <-h.Unregister:
-			fmt.Println("Received an unregistration request")
 			h.closeClient(c)
 		case f := <-h.Broadcast:
-			// Fanout. TODO, a field in Message to know to do a private send?
+			// Chat text is decorated with its sender once, here, rather than
+			// per-recipient in the fanout below.
+			if f.Kind == protocol.KindChat {
+				decorated, err := decorateChat(f)
+				if err != nil {
+					log.Printf("dropping malformed chat frame: %v", err)
+					continue
+				}
+				f = decorated
+			}
+			// Fanout. TODO, a field in Frame to know to do a private send?
 			for c := range h.clientList {
 				select {
 				case c.Out <- f:
@@ -62,6 +69,15 @@ func (h *Hub) run() {
 			// Currenly only handles clientList length requests
 			clientNum := len(h.clientList)
 			req.reply <- clientNum
+		case req := <-h.NameTaken:
+			taken := false
+			for c := range h.clientList {
+				if c.Name == req.name {
+					taken = true
+					break
+				}
+			}
+			req.reply <- taken
 		case <-h.Done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
 			for c := range h.clientList {
@@ -78,10 +94,41 @@ func (h *Hub) clientCount() int {
 	return <-ch
 }
 
+// Asks the hub whether a name is in use. A hub in teardown answers "taken", so
+// a handshake arriving during shutdown is rejected instead of blocking forever.
+func (h *Hub) nameTaken(name string) bool {
+	ch := make(chan bool, 1)
+	select {
+	case h.NameTaken <- NameReq{name: name, reply: ch}:
+	case <-h.Done:
+		return true
+	}
+	select {
+	case taken := <-ch:
+		return taken
+	case <-h.Done:
+		return true
+	}
+}
+
 func (h *Hub) closeClient(c *Client) {
 	if _, ok := h.clientList[c]; !ok {
 		return
 	}
 	close(c.Out)
+	// Also drop the connection so the client's read goroutine unblocks. Without
+	// this, teardown waits on processClientOutQueue's deferred close.
+	if c.Conn != nil {
+		c.Conn.Close()
+	}
 	delete(h.clientList, c)
+}
+
+// Rewrites a chat frame's text as "<sender> text".
+func decorateChat(f protocol.Frame) (protocol.Frame, error) {
+	var chat protocol.Chat
+	if err := json.Unmarshal(f.Payload, &chat); err != nil {
+		return protocol.Frame{}, err
+	}
+	return protocol.NewChatFrame(chat.From, fmt.Sprintf(messageFormat, chat.From, chat.Text))
 }

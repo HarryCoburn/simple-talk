@@ -16,6 +16,12 @@ type ClientNumReq struct {
 	reply chan int
 }
 
+// A struct for asking the hub whether a username is already in use
+type NameReq struct {
+	name  string
+	reply chan bool
+}
+
 func main() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
@@ -105,11 +111,10 @@ func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
 	}
 	clientName := hs.Name
 
-	for c := range hub.clientList {
-		if c.Name == clientName {
-			// Name collision
-			return "", fmt.Errorf("Name already taken. Choose another")
-		}
+	// Ask the hub rather than reading its map: clientList belongs to hub.run's
+	// goroutine.
+	if hub.nameTaken(clientName) {
+		return "", fmt.Errorf("Name already taken. Choose another")
 	}
 
 	return clientName, nil
