@@ -2,10 +2,23 @@ package protocol
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
-	"log"
+	"errors"
+	"fmt"
 	"net"
 	"sync"
+)
+
+const (
+	MaxFrameSize   = 8192
+	maxDiscardSize = MaxFrameSize * 4
+)
+
+var (
+	ErrBadFrame      = errors.New("protocol: received a bad frame")
+	ErrFrameTooLarge = errors.New("protocol: frame exceeds maximum size")
+	ErrUnrecoverable = errors.New("protocol: stream desynchronized, connection unsuable")
 )
 
 type Conn struct {
@@ -18,7 +31,7 @@ type Conn struct {
 func NewConn(c net.Conn) *Conn {
 	return &Conn{
 		conn: c,
-		r:    bufio.NewReader(c),
+		r:    bufio.NewReaderSize(c, MaxFrameSize),
 		mu:   sync.Mutex{},
 		enc:  json.NewEncoder(c),
 	}
@@ -46,15 +59,69 @@ func (c *Conn) SendHandshake(name string) error {
 
 }
 
+// Receiving
+
+// Returns one newline-deliminted frame, or one of the special errors.
+func (c *Conn) readLine() ([]byte, error) {
+	line, err := c.r.ReadSlice('\n')
+	if err == nil {
+		return line, nil
+	}
+
+	// Is the buffer full?
+	if !errors.Is(err, bufio.ErrBufferFull) {
+		return nil, err
+	}
+
+	// The buffer is full. Try to recover.
+
+	// Find out how much we have
+	discarded := len(line)
+	for {
+		// Is it beyond our max size of discarded data?
+		if discarded > maxDiscardSize {
+			return nil, ErrUnrecoverable
+		}
+		// No, read another slice and add its length.
+		chunk, err := c.r.ReadSlice('\n')
+		discarded += len(chunk)
+
+		// What did that read return?
+		switch {
+		case err == nil:
+			return nil, ErrFrameTooLarge
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		default:
+			return nil, err
+		}
+	}
+
+}
+
 func (c *Conn) Recv() (Frame, error) {
-	jsonPayload, err := c.r.ReadBytes('\n')
+	line, err := c.readLine()
 	if err != nil {
-		log.Fatalf("Something wrong with the payload in Recv: %v", err)
+		return Frame{}, nil
 	}
-	var result Frame
-	err = json.Unmarshal(jsonPayload, &result)
-	if err != nil {
-		return result, err
+
+	line = bytes.TrimRight(line, "\r\n")
+	if len(line) == 0 {
+		return Frame{}, fmt.Errorf("%w: empty line", ErrBadFrame)
 	}
-	return result, nil
+
+	var f Frame
+	if err := json.Unmarshal(line, &f); err != nil {
+		return Frame{}, fmt.Errorf("%w: %v", ErrBadFrame, err)
+	}
+	if f.Kind == "" {
+		return Frame{}, fmt.Errorf("%w: missing kind", ErrBadFrame)
+	}
+
+	// Unmarshal may retain a subslice of line, which readLine's buffer will
+	// overwrite on the next call. Copy so the frame outlives this call.
+	if f.Payload != nil {
+		f.Payload = append(json.RawMessage(nil), f.Payload...)
+	}
+	return f, nil
 }
