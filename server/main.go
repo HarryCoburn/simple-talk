@@ -73,6 +73,6 @@ func handleConn(hub *Hub, conn net.Conn) {
 		return
 	}
 	go newClient.proceessClientOutQueue()
-	go newClient.readLoop(hub)
+	go newClient.readClientInput(hub)
 
 }

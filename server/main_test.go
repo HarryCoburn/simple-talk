@@ -128,7 +128,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 func TestReadLoop(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
-	go testHelp.Client.readLoop(chatHub)
+	go testHelp.Client.readClientInput(chatHub)
 	fmt.Fprintln(testHelp.OutConn, "Hello")
 	var result Message
 	select {
@@ -144,7 +144,7 @@ func TestReadLoop(t *testing.T) {
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
-	go testHelp.Client.readLoop(chatHub)
+	go testHelp.Client.readClientInput(chatHub)
 	testHelp.OutConn.Close()
 	var got *Client
 	select {
@@ -160,7 +160,7 @@ func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
-	go testHelp.Client.readLoop(chatHub)
+	go testHelp.Client.readClientInput(chatHub)
 	testHelp.InConn.Close()
 	var got *Client
 	select {
@@ -177,7 +177,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
 	exited := make(chan struct{})
-	go func() { testHelp.Client.readLoop(chatHub); close(exited) }()
+	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
 	fmt.Fprintln(testHelp.OutConn, "Hello")
 	close(chatHub.Done)
 	select {
@@ -192,7 +192,7 @@ func TestDoneGuardsUnregister(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
 	exited := make(chan struct{})
-	go func() { testHelp.Client.readLoop(chatHub); close(exited) }()
+	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
 	close(chatHub.Done)
 	testHelp.OutConn.Close()
 	select {
@@ -211,11 +211,11 @@ func TestEndtoEnd(t *testing.T) {
 
 	chatHub.Register <- alice.Client
 	go alice.Client.proceessClientOutQueue()
-	go alice.Client.readLoop(chatHub)
+	go alice.Client.readClientInput(chatHub)
 
 	chatHub.Register <- bob.Client
 	go bob.Client.proceessClientOutQueue()
-	go bob.Client.readLoop(chatHub)
+	go bob.Client.readClientInput(chatHub)
 
 	fmt.Fprintln(alice.OutConn, "Hello")
 	result, err := bob.Reader.ReadString('\n')
@@ -242,7 +242,7 @@ func TestTeardownCascade(t *testing.T) {
 		chatHub.Register <- c
 		wg.Add(2)
 		go func() { defer wg.Done(); c.proceessClientOutQueue() }()
-		go func() { defer wg.Done(); c.readLoop(chatHub) }()
+		go func() { defer wg.Done(); c.readClientInput(chatHub) }()
 	}
 
 	allDone := make(chan struct{})

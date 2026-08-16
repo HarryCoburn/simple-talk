@@ -44,7 +44,7 @@ func (c *Client) proceessClientOutQueue() {
 	}
 }
 
-func (c *Client) readLoop(hub *Hub) {
+func (c *Client) readClientInput(hub *Hub) {
 	for {
 		// Reads what the client writes. Closes client safely if there is a problem with reading.
 		line, err := c.Reader.ReadString('\n')
