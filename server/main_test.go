@@ -107,7 +107,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	in, out := net.Pipe()
 	t.Cleanup(func() { out.Close() })
 	chatClient := newClient(in)
-	go chatClient.writeLoop()
+	go chatClient.proceessClientOutQueue()
 	reader := bufio.NewReader(out)
 	msg := Message{From: chatClient, Data: []byte("Hello\n")}
 	chatClient.Out <- msg
@@ -210,11 +210,11 @@ func TestEndtoEnd(t *testing.T) {
 	chatHub, _ := newTestHub(t) // newTestHub() starts hub.run()
 
 	chatHub.Register <- alice.Client
-	go alice.Client.writeLoop()
+	go alice.Client.proceessClientOutQueue()
 	go alice.Client.readLoop(chatHub)
 
 	chatHub.Register <- bob.Client
-	go bob.Client.writeLoop()
+	go bob.Client.proceessClientOutQueue()
 	go bob.Client.readLoop(chatHub)
 
 	fmt.Fprintln(alice.OutConn, "Hello")
@@ -241,7 +241,7 @@ func TestTeardownCascade(t *testing.T) {
 	for _, c := range []*Client{alice.Client, bob.Client} {
 		chatHub.Register <- c
 		wg.Add(2)
-		go func() { defer wg.Done(); c.writeLoop() }()
+		go func() { defer wg.Done(); c.proceessClientOutQueue() }()
 		go func() { defer wg.Done(); c.readLoop(chatHub) }()
 	}
 

@@ -12,11 +12,11 @@ import (
 
 // An individual client connection.
 type Client struct {
-	Connection net.Conn
-	Name       string
-	Writer     *bufio.Writer
-	Reader     *bufio.Reader
-	Out        chan Message
+	Connection net.Conn      // The TCP connection of the Client
+	Name       string        // The username of the Client
+	Writer     *bufio.Writer // To write to other TCP connections
+	Reader     *bufio.Reader // To receive from other TCP connections
+	Out        chan Message  // The message channel queue
 }
 
 func newClient(conn net.Conn) *Client {
@@ -31,15 +31,12 @@ func newClient(conn net.Conn) *Client {
 
 const userNamePrompt = "Please state your username: \n"
 
-func (c *Client) writeLoop() {
+func (c *Client) proceessClientOutQueue() {
+	// Listens to the client's Out queue, then writes any message received to Writer for display.
 	defer c.Connection.Close()
 	for output := range c.Out {
-		_, err := c.Writer.Write(output.Data)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		err = c.Writer.Flush()
+		c.Writer.Write(output.Data)
+		err := c.Writer.Flush() // Writes the output to the console.
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -47,9 +44,9 @@ func (c *Client) writeLoop() {
 	}
 }
 
-// Reads what the client sends, and closes clients when they are gone.
 func (c *Client) readLoop(hub *Hub) {
 	for {
+		// Reads what the client writes. Closes client safely if there is a problem with reading.
 		line, err := c.Reader.ReadString('\n')
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -64,6 +61,7 @@ func (c *Client) readLoop(hub *Hub) {
 				return
 			}
 		}
+		// Take what client wrote and place it into a Message struct for sending
 		select {
 		case hub.Broadcast <- Message{From: c, Data: []byte(line)}:
 		case <-hub.Done:
@@ -73,12 +71,8 @@ func (c *Client) readLoop(hub *Hub) {
 }
 
 func (c *Client) setUserName() error {
-	_, err := c.Writer.Write([]byte(userNamePrompt))
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	err = c.Writer.Flush()
+	c.Writer.Write([]byte(userNamePrompt))
+	err := c.Writer.Flush()
 	if err != nil {
 		fmt.Println(err)
 		return err
