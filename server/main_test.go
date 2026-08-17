@@ -143,6 +143,31 @@ func TestReadLoop(t *testing.T) {
 
 }
 
+func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
+	testHelp := setUpTest(t)
+	chatHub := newHub()
+	go testHelp.Client.readClientInput(chatHub)
+
+	// A kind this server does not handle must not tear down the connection.
+	if err := testHelp.Peer.SendHandshake("test"); err != nil {
+		t.Fatalf("Could not send the handshake: %v", err)
+	}
+
+	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
+		t.Fatalf("Could not send the chat: %v", err)
+	}
+	select {
+	case result := <-chatHub.Broadcast:
+		if got := chatText(t, result); got != "<test> Hello" {
+			t.Errorf("Did not receive correct response after an unsupported kind: %q", got)
+		}
+	case <-chatHub.Unregister:
+		t.Fatalf("Client was disconnected by an unsupported frame kind")
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("Timed out waiting for a chat after an unsupported kind")
+	}
+}
+
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
