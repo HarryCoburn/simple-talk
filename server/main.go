@@ -53,7 +53,7 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			log.Printf("Error accepting a connection: %v\n", err)
+			log.Printf("Error accepting a connection: %v", err)
 			continue
 		}
 		go handleNewConn(hub, conn)
@@ -65,7 +65,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	fullc := protocol.NewConn(conn)
 	clientName, err := verifyName(hub, fullc)
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("Rejecting connection: %v", err)
 		fullc.Close()
 		return
 	}
@@ -77,14 +77,14 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		// Send handshake ack
 		err = fullc.SendHandshakeAck(clientName)
 		if err != nil {
-			fmt.Println(err)
+			log.Printf("Could not acknowledge the handshake for %s: %v", clientName, err)
 			fullc.Close()
 			return
 		}
 		// Announce successful connection to others.
 		f, err := announceConnection(newClient.Name)
 		if err != nil {
-			fmt.Println(err)
+			log.Printf("Could not announce the arrival of %s: %v", newClient.Name, err)
 			fullc.Close()
 			return
 		}

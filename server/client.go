@@ -32,7 +32,7 @@ func (c *Client) processClientOutQueue() {
 		// Out should hold a completed frame
 		err := c.Conn.SendFrame(frame)
 		if err != nil {
-			fmt.Println(err)
+			log.Printf("write to %s failed: %v", c.Name, err)
 			return
 		}
 	}
@@ -44,23 +44,23 @@ func (c *Client) readClientInput(hub *Hub) {
 		frame, err := c.Conn.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				fmt.Println("Connection closed cleanly")
+				log.Print("Connection closed cleanly")
 			} else {
-				fmt.Printf("connection broke, not EOF: %v", err)
+				log.Printf("connection broke, not EOF: %v", err)
 			}
 			c.leave(hub)
 			return
 		}
 
 		if frame.Kind != protocol.KindChat {
-			fmt.Printf("Didn't receive a chat. Problem!")
+			log.Print("Didn't receive a chat. Problem!")
 			c.leave(hub)
 			return
 		}
 
 		var chat protocol.Chat
 		if err := json.Unmarshal(frame.Payload, &chat); err != nil {
-			fmt.Printf("Discarding unreadable chat payload: %v\n", err)
+			log.Printf("Discarding unreadable chat payload: %v", err)
 			continue
 		}
 		// And now we decorate here instead. We are assuming clients can only send protocol.KindChat
