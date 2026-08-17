@@ -1,10 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
-
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
@@ -47,15 +43,7 @@ func (h *Hub) run() {
 		case c := <-h.Unregister:
 			h.closeClient(c)
 		case f := <-h.Broadcast:
-			// TODO: Should the hub be doing all of this?
-			if f.Kind == protocol.KindChat {
-				decorated, err := decorateChat(f)
-				if err != nil {
-					log.Printf("dropping malformed chat frame: %v", err)
-					continue
-				}
-				f = decorated
-			}
+
 			// Fanout
 			for c := range h.clientList {
 				select {
@@ -117,12 +105,4 @@ func (h *Hub) closeClient(c *Client) {
 		c.Conn.Close()
 	}
 	delete(h.clientList, c)
-}
-
-func decorateChat(f protocol.Frame) (protocol.Frame, error) {
-	var chat protocol.Chat
-	if err := json.Unmarshal(f.Payload, &chat); err != nil {
-		return protocol.Frame{}, err
-	}
-	return protocol.NewChatFrame(chat.From, fmt.Sprintf(messageFormat, chat.From, chat.Text))
 }

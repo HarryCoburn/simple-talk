@@ -77,11 +77,11 @@ func TestBroadcast(t *testing.T) {
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read2")
 	}
-	if got := chatText(t, f1); got != "<Alice> Test" {
-		t.Errorf("client1 got %q, want %q", got, "<Alice> Test")
+	if got := chatText(t, f1); got != "Test" {
+		t.Errorf("client1 got %q, want %q", got, "Test")
 	}
-	if got := chatText(t, f2); got != "<Alice> Test" {
-		t.Errorf("client1 got %q, want %q", got, "<Alice> Test")
+	if got := chatText(t, f2); got != "Test" {
+		t.Errorf("client1 got %q, want %q", got, "Test")
 	}
 }
 
@@ -137,7 +137,7 @@ func TestReadLoop(t *testing.T) {
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out trying to TestReadLoop")
 	}
-	if got := chatText(t, result); got != "Hello" {
+	if got := chatText(t, result); got != "<test> Hello" {
 		t.Errorf("TestReadLoop did not receive correct response: %q", got)
 	}
 

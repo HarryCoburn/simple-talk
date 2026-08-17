@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -71,16 +72,26 @@ func (c *Client) readClientInput(hub *Hub) {
 			fmt.Printf("Discarding unreadable chat payload: %v\n", err)
 			continue
 		}
-		frame, err = protocol.NewChatFrame(c.Name, chat.Text)
+		// And now we decorate here instead. We are assuming clients can only send protocol.KindChat
+		decorated, err := decorateChat(frame)
 		if err != nil {
-			fmt.Printf("Could not rebuild the chat frame: %v\n", err)
+			log.Printf("dropping malformed chat frame: %v", err)
 			continue
 		}
+
 		// Send the frame on
 		select {
-		case hub.Broadcast <- frame:
+		case hub.Broadcast <- decorated:
 		case <-hub.Done:
 			return
 		}
 	}
+}
+
+func decorateChat(f protocol.Frame) (protocol.Frame, error) {
+	var chat protocol.Chat
+	if err := json.Unmarshal(f.Payload, &chat); err != nil {
+		return protocol.Frame{}, err
+	}
+	return protocol.NewChatFrame(chat.From, fmt.Sprintf(messageFormat, chat.From, chat.Text))
 }
