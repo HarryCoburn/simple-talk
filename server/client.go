@@ -52,29 +52,25 @@ func (c *Client) readClientInput(hub *Hub) {
 			return
 		}
 
-		if frame.Kind != protocol.KindChat {
-			fmt.Printf("Didn't receive a chat. Problem!")
-			c.leave(hub)
-			return
-		}
+		switch frame.Kind {
+		case protocol.KindChat:
+			// And now we decorate here instead.
+			decorated, err := decorateChat(frame)
+			if err != nil {
+				log.Printf("dropping malformed chat frame: %v", err)
+				continue
+			}
 
-		var chat protocol.Chat
-		if err := json.Unmarshal(frame.Payload, &chat); err != nil {
-			fmt.Printf("Discarding unreadable chat payload: %v\n", err)
-			continue
-		}
-		// And now we decorate here instead. We are assuming clients can only send protocol.KindChat
-		decorated, err := decorateChat(frame)
-		if err != nil {
-			log.Printf("dropping malformed chat frame: %v", err)
-			continue
-		}
-
-		// Send the frame on
-		select {
-		case hub.Broadcast <- decorated:
-		case <-hub.Done:
-			return
+			// Send the frame on
+			select {
+			case hub.Broadcast <- decorated:
+			case <-hub.Done:
+				return
+			}
+		default:
+			// A kind this server does not handle is not a reason to hang up:
+			// a newer client may send frames this build predates.
+			log.Printf("ignoring unsupported frame kind %q from %s", frame.Kind, c.Name)
 		}
 	}
 }
