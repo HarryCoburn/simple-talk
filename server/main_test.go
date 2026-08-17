@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -141,6 +142,41 @@ func TestReadLoop(t *testing.T) {
 		t.Errorf("TestReadLoop did not receive correct response: %q", got)
 	}
 
+}
+
+func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
+	testHelp := setUpTest(t)
+	chatHub := newHub()
+	go testHelp.Client.readClientInput(chatHub)
+
+	// A frame past MaxFrameSize is recoverable: protocol.Conn resynchronizes on
+	// the trailing newline, so the session must stay alive.
+	oversized := append([]byte(`{"kind":"chat","payload":{"from":"test","text":"`), bytes.Repeat([]byte("x"), protocol.MaxFrameSize)...)
+	oversized = append(oversized, []byte("\"}}\n")...)
+	go func() { testHelp.OutConn.Write(oversized) }()
+
+	f, err := testHelp.Peer.Recv()
+	if err != nil {
+		t.Fatalf("Could not read the error frame: %v", err)
+	}
+	if f.Kind != protocol.KindError {
+		t.Fatalf("Wanted a %q frame after an oversized frame, got %q", protocol.KindError, f.Kind)
+	}
+
+	// The connection is still usable.
+	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
+		t.Fatalf("Could not send the chat: %v", err)
+	}
+	select {
+	case result := <-chatHub.Broadcast:
+		if got := chatText(t, result); got != "<test> Hello" {
+			t.Errorf("Did not receive correct response after an oversized frame: %q", got)
+		}
+	case <-chatHub.Unregister:
+		t.Fatalf("Client was disconnected by a recoverable oversized frame")
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("Timed out waiting for a chat after an oversized frame")
+	}
 }
 
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
