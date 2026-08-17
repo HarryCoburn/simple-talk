@@ -81,6 +81,13 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 	select {
 	case hub.Register <- newClient:
+		f, err := announceConnection(newClient.Name)
+		if err != nil {
+			fmt.Println(err)
+			fullc.Close()
+			return
+		}
+		hub.Broadcast <- f
 	case <-hub.Done:
 		conn.Close()
 		return
@@ -115,4 +122,13 @@ func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
 	}
 
 	return clientName, nil
+}
+
+func announceConnection(name string) (protocol.Frame, error) {
+	msg := fmt.Sprintf("%s has connected.", name)
+	f, err := protocol.NewChatFrame(name, msg)
+	if err != nil {
+		return protocol.Frame{}, err
+	}
+	return f, nil
 }
