@@ -106,7 +106,8 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	t.Cleanup(func() { out.Close() })
 	fullc := protocol.NewConn(in)
 	chatClient := newClient(fullc, "Harry")
-	go chatClient.processClientOutQueue()
+	chatHub := newHub()
+	go chatClient.processClientOutQueue(chatHub)
 	peer := protocol.NewConn(out)
 
 	chatClient.Out <- mustChatFrame(t, "Harry", "Hello")
@@ -119,9 +120,31 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 		t.Errorf("Client sent Hello, Output pipe got %q", got)
 	}
 
+	// Clsoing out stops the write loop but leaves socket alone.
 	close(chatClient.Out)
+	fullc.Close()
 	if _, err = peer.Recv(); !errors.Is(err, io.EOF) {
-		t.Errorf("Did not receive io.EOF after closing Out: %T %v", err, err)
+		t.Errorf("Did not receive io.EOF after closing the connection: %T %v", err, err)
+	}
+}
+
+func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
+	testHelp := setUpTest(t)
+	chatHub := newHub()
+	go testHelp.Client.processClientOutQueue(chatHub)
+
+	// Break the socket so the next write fails.
+	testHelp.OutConn.Close()
+	testHelp.Client.Out <- mustChatFrame(t, "Harry", "Hello")
+
+	var got *Client
+	select {
+	case got = <-chatHub.Unregister:
+	case <-time.After(time.Millisecond * 500):
+		t.Fatalf("A failed write did not unregister the client")
+	}
+	if testHelp.Client != got {
+		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Client, got)
 	}
 }
 
@@ -277,11 +300,11 @@ func TestEndtoEnd(t *testing.T) {
 	chatHub, _ := newTestHub(t) // newTestHub() starts hub.run()
 
 	chatHub.Register <- alice.Client
-	go alice.Client.processClientOutQueue()
+	go alice.Client.processClientOutQueue(chatHub)
 	go alice.Client.readClientInput(chatHub)
 
 	chatHub.Register <- bob.Client
-	go bob.Client.processClientOutQueue()
+	go bob.Client.processClientOutQueue(chatHub)
 	go bob.Client.readClientInput(chatHub)
 
 	// Bound the reads, so a regression fails this test instead of hanging the
@@ -323,7 +346,7 @@ func TestTeardownCascade(t *testing.T) {
 	for _, c := range []*Client{alice.Client, bob.Client} {
 		chatHub.Register <- c
 		wg.Add(2)
-		go func() { defer wg.Done(); c.processClientOutQueue() }()
+		go func() { defer wg.Done(); c.processClientOutQueue(chatHub) }()
 		go func() { defer wg.Done(); c.readClientInput(chatHub) }()
 	}
 

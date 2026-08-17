@@ -93,7 +93,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		conn.Close()
 		return
 	}
-	go newClient.processClientOutQueue()
+	go newClient.processClientOutQueue(hub)
 	go newClient.readClientInput(hub)
 }
 

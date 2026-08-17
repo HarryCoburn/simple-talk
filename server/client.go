@@ -25,14 +25,17 @@ func newClient(conn *protocol.Conn, name string) *Client {
 	}
 }
 
-func (c *Client) processClientOutQueue() {
+func (c *Client) processClientOutQueue(hub *Hub) {
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
-	defer c.Conn.Close()
+	// The socket belongs to hub.closeClient, and that closes c.Out, so this loop does not need
+	// to close.
 	for frame := range c.Out {
 		// Out should hold a completed frame
 		err := c.Conn.SendFrame(frame)
 		if err != nil {
 			fmt.Println(err)
+			// Tell the hub to close since Out won't drain after this loop stops.
+			c.leave(hub)
 			return
 		}
 	}
