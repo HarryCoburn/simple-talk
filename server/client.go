@@ -25,7 +25,7 @@ func newClient(conn *protocol.Conn, name string) *Client {
 	}
 }
 
-func (c *Client) processClientOutQueue() {
+func (c *Client) processClientOutQueue(hub *Hub) {
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
 	defer c.Conn.Close()
 	for frame := range c.Out {
@@ -33,6 +33,10 @@ func (c *Client) processClientOutQueue() {
 		err := c.Conn.SendFrame(frame)
 		if err != nil {
 			fmt.Println(err)
+			// Nobody drains Out once this loop stops, so tell the hub now
+			// instead of letting it discover the dead client a bufferful of
+			// broadcasts later. Closing Out stays the hub's job.
+			c.leave(hub)
 			return
 		}
 	}
