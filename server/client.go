@@ -43,38 +43,39 @@ func (c *Client) readClientInput(hub *Hub) {
 		// Reads what the client writes. Closes client safely if there is a problem with reading.
 		frame, err := c.Conn.Recv()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			switch {
+			case errors.Is(err, io.EOF):
 				fmt.Println("Connection closed cleanly")
-			} else {
+			case errors.Is(err, protocol.ErrBadFrame), errors.Is(err, protocol.ErrFrameTooLarge):
+				fmt.Printf("discarding unsuable frame from %s: %v\n", c.Name, err)
+				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
+					fmt.Printf("could not report frame error to %s: %v\n", c.Name, sendErr)
+					c.leave(hub)
+					return
+				}
+				continue
+			default:
 				fmt.Printf("connection broke, not EOF: %v", err)
 			}
 			c.leave(hub)
 			return
 		}
 
-		if frame.Kind != protocol.KindChat {
-			fmt.Printf("Didn't receive a chat. Problem!")
-			c.leave(hub)
-			return
-		}
+		switch frame.Kind {
+		case protocol.KindChat:
+			decorated, err := decorateChat(frame)
+			if err != nil {
+				log.Printf("dropping malformed chat frame: %v", err)
+				continue
+			}
+			select {
+			case hub.Broadcast <- decorated:
+			case <-hub.Done:
+				return
+			}
+		default:
+			log.Printf("ignoring unsupported frame kind %q from %s", frame.Kind, c.Name)
 
-		var chat protocol.Chat
-		if err := json.Unmarshal(frame.Payload, &chat); err != nil {
-			fmt.Printf("Discarding unreadable chat payload: %v\n", err)
-			continue
-		}
-		// And now we decorate here instead. We are assuming clients can only send protocol.KindChat
-		decorated, err := decorateChat(frame)
-		if err != nil {
-			log.Printf("dropping malformed chat frame: %v", err)
-			continue
-		}
-
-		// Send the frame on
-		select {
-		case hub.Broadcast <- decorated:
-		case <-hub.Done:
-			return
 		}
 	}
 }
