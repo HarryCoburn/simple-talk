@@ -61,15 +61,7 @@ func TestBroadcast(t *testing.T) {
 	client1 := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
 	client2 := &Client{Name: "Bob", Out: make(chan protocol.Frame, 1)}
 
-	payload := protocol.Chat{
-		From: "Alice",
-		Text: "Test",
-	}
-	enc, _ := json.Marshal(payload)
-	f := protocol.Frame{
-		Kind:    protocol.KindChat,
-		Payload: enc,
-	}
+	f := mustChatFrame(t, "Alice", "Test")
 	chatHub.Register <- client1
 	chatHub.Register <- client2
 	chatHub.Broadcast <- f
@@ -87,16 +79,11 @@ func TestBroadcast(t *testing.T) {
 	case <-time.After(time.Millisecond * 100):
 		t.Fatal("Timed out getting result for read2")
 	}
-	var p1 protocol.Chat
-	var p2 protocol.Chat
-	json.Unmarshal(f1.Payload, &p1)
-	json.Unmarshal(f2.Payload, &p2)
-
-	if !(p1.Text == "<Alice> Test") {
-		t.Errorf("client1 got %q, want %q", p1.Text, "<Alice> Test")
+	if got := chatText(t, f1); got != "<Alice> Test" {
+		t.Errorf("client1 got %q, want %q", got, "<Alice> Test")
 	}
-	if !(p2.Text == "<Alice> Test") {
-		t.Errorf("client1 got %q, want %q", p2.Text, "<Alice> Test")
+	if got := chatText(t, f2); got != "<Alice> Test" {
+		t.Errorf("client1 got %q, want %q", got, "<Alice> Test")
 	}
 }
 
@@ -104,10 +91,11 @@ func TestDroppedClientPath(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	client := &Client{Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
 	chatHub.Register <- client
-	payload1 := []byte("Test")
-	payload2 := []byte("Received")
-	chatHub.Broadcast <- protocol.Frame{Kind: protocol.KindChat, Payload: payload1} // Fill buffer
-	chatHub.Broadcast <- protocol.Frame{Kind: protocol.KindChat, Payload: payload2} // Overload Client.Out, which should force server to drop the client.
+	frame1 := mustChatFrame(t, "Alice", "Test")
+	frame2 := mustChatFrame(t, "Alice", "Received")
+	chatHub.Broadcast <- frame1 // Fill buffer
+	chatHub.Broadcast <- frame2 // Overload Client.Out, which should force server to drop the client.
+
 
 	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0, got %d", got)
@@ -121,20 +109,20 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	fullc := protocol.NewConn(in)
 	chatClient := newClient(fullc, "Harry")
 	go chatClient.processClientOutQueue()
-	reader := bufio.NewReader(out)
-	payload := "Hello\n"
-	enc, _ := json.Marshal(payload)
-	chatClient.Out <- protocol.Frame{Kind: protocol.KindChat, Payload: enc}
-	line, err := reader.ReadString('\n')
+	peer := protocol.NewConn(out)
+
+	chatClient.Out <- mustChatFrame(t, "Harry", "Hello")
+	frame, err := peer.Recv()
+
 	if err != nil {
-		t.Fatalf("ReadString failure: %v", err)
+		t.Fatalf("Recv failure: %v", err)
 	}
-	if line != "Hello\n" {
-		t.Errorf("Client sent Hello, Output pipe got %v", line)
+	if got := chatText(t, frame); got != "Hello" {
+		t.Errorf("Client sent Hello, Output pipe got %q", got)
 	}
+
 	close(chatClient.Out)
-	_, err = reader.ReadString('\n')
-	if !errors.Is(err, io.EOF) {
+	if _, err = peer.Recv(); !errorsIs(err, io.EOF) {
 		t.Errorf("Did not receive io.EOF after closing Out: %T %v", err, err)
 	}
 }
@@ -143,18 +131,19 @@ func TestReadLoop(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub()
 	go testHelp.Client.readClientInput(chatHub)
-	fmt.Fprintln(testHelp.OutConn, "Hello")
+	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
+		t.Fatalf("Could not send the chat: %v", err)
+	}
 	var result protocol.Frame
 	select {
 	case result = <-chatHub.Broadcast:
 	case <-time.After(time.Millisecond * 100):
-		t.Errorf("Timed out trying to TestReadLoop")
+		t.Fatalf("Timed out trying to TestReadLoop")
 	}
-	var unpack protocol.Chat
-	json.Unmarshal(result.Payload, &unpack)
-	if unpack.Text != "Hello\n" {
+	if got := chatText(t, result); got != "Hello" {
 		t.Errorf("TestReadLoop did not receive correct response: %q", unpack.Text)
 	}
+
 }
 
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
@@ -194,7 +183,11 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	chatHub := newHub()
 	exited := make(chan struct{})
 	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
-	fmt.Fprintln(testHelp.OutConn, "Hello")
+	// Nothing is draining chatHub.Broadcast, so readClientInput parks in the
+		// send select until Done releases it.
+	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
+		t.Fatalf("Could not send the chat: %v", err)
+	}
 	close(chatHub.Done)
 	select {
 	case <-exited:
@@ -233,15 +226,30 @@ func TestEndtoEnd(t *testing.T) {
 	go bob.Client.processClientOutQueue()
 	go bob.Client.readClientInput(chatHub)
 
-	fmt.Fprintln(alice.OutConn, "Hello")
-	result, err := bob.Reader.ReadString('\n')
-	if result != "<Alice> Hello\n" {
-		t.Errorf("Did not receive end to end message. Received: %q", err)
+	// Bound the reads, so a regression fails this test instead of hanging the
+	// whole binary until the package timeout panics.
+	deadline := time.Now().Add(2 * time.Second)
+	alice.OutConn.SetDeadline(deadline)
+	bob.OutConn.SetDeadline(deadline)
+
+	if err := alice.Peer.SendChat("Alice", "Hello"); err != nil {
+		t.Fatalf("Alice could not send: %v", err)
+	}
+
+	frame, err := bob.Peer.Recv()
+	if err != nil {
+		t.Fatalf("Bob did not receive the message: %v", err)
+	}
+	if got := chatText(t, frame); got != "<Alice> Hello" {
+		t.Errorf("Did not receive end to end message. Received: %q", got)
 	}
 	// Echo check
-	result, err = alice.Reader.ReadString('\n')
-	if result != "<Alice> Hello\n" {
-		t.Errorf("Did not receive end to end message on echo. Received: %q", err)
+	frame, err = alice.Peer.Recv()
+	if err != nil {
+		t.Fatalf("Alice did not receive the echo: %v", err)
+	}
+	if got := chatText(t, frame); got != "<Alice> Hello" {
+		t.Errorf("Did not receive end to end message on echo. Received: %q", got)
 	}
 
 }
@@ -297,33 +305,45 @@ func TestAcceptLoop(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 
 	// Bound every read, so a stalled server fails this test in two seconds
-	// instead of hanging the binary until the ten second panic.
+	// instead of hanging the binary until the package timeout panics.
 	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatalf("Could not set a read deadline: %v", err)
 	}
-	reader := bufio.NewReader(conn)
+	peer := protocol.NewConn(conn)
+	if err := peer.SendHandshake("Harry"); err != nil {
+			t.Fatalf("Could not send the handshake: %v", err)
+		}
+	ackFrame, err := peer.Recv()
 
-	prompt, err := reader.ReadString('\n')
 	if err != nil {
-		t.Fatalf("Did not receive the username prompt: %v", err)
+		t.Fatalf("Did not receive the handshake ack: %v", err)
 	}
-	if prompt != userNamePrompt {
-		t.Fatalf("Wanted prompt %q, got %q", userNamePrompt, prompt)
+	if ackFrame.Kind != protocol.KindHandshakeAck {
+			t.Fatalf("Wanted a %q frame, got %q", protocol.KindHandshakeAck, ackFrame.Kind)
+	}
+	var ack protocol.HandshakeAck
+	if err := json.Unmarshal(ackFrame.Payload, &ack); err != nil {
+		t.Fatalf("Could not unpack the ack payload: %v", err)
+
+	if ack.Name != "Harry" {
+			t.Errorf("Wanted the name %q back, got %q", "Harry", ack.Name)
 	}
 
-	// Pipelined deliberately. "Hello\n" can fall into the same bufio.Reader
-	// that setUserName reads from. readLoop has to inherit that reader rather than
-	// construct its own.
-	fmt.Fprintln(conn, "Harry")
-	fmt.Fprintln(conn, "Hello")
+	// Chat sent on the same connection the handshake used. verifyName and
+	// readClientInput share one protocol.Conn, so a chat that arrived in the
+	// same read as the handshake is already sitting in that bufio.Reader and is
+	// not lost.
+	if err := peer.SendChat("Harry", "Hello"); err != nil {
+		t.Fatalf("Could not send the chat: %v", err)
+	}
 
-	line, err := reader.ReadString('\n')
+	frame, err := peer.Recv()
 	if err != nil {
-		t.Errorf("Did not receive the broadcast: %v", err)
+		t.Fatalf("Did not receive the broadcast: %v", err)
 	}
 
-	if line != "<Harry> Hello\n" {
-		t.Errorf("Wanted %q, got %q", "<Harry> Hello\n", line)
+	if got:=chatText(t, frame); got != "<Harry> Hello" {
+		t.Errorf("Wanted %q, got %q", "<Harry> Hello", got)
 	}
 
 	if got := chatHub.clientCount(); got != 1 {
@@ -366,20 +386,14 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 		t.Fatalf("Could not set a deadline: %v", err)
 	}
 
-	reader := bufio.NewReader(clientSide)
-
-	prompt, err := reader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("Did not receive the username prompt: %v", err)
-	}
-	if prompt != userNamePrompt {
-		t.Fatalf("Wanted prompt %q, got %q", userNamePrompt, prompt)
+	peer := protocol.NewConn(clientSide)
+	if err := peer.SendHandshake("Harry"); err != nil {
+			t.Fatalf("Could not send the handshake: %v", err)
 	}
 
-	fmt.Fprintln(clientSide, "Harry")
-	// Register has no receiver and Done is closed, so the select is deterministic:
-	// handleConn takes the Done branch and closes the connection.
-	if _, err := reader.ReadString('\n'); !errors.Is(err, io.EOF) {
+	// nameTaken and Register both observe a closed Done, so the selects are
+	// deterministic: handleNewConn bails out and closes the connection.
+	if _, err := peer.Recv(); !errors.Is(err, io.EOF) {
 		t.Errorf("Wanted io.EOF after a post-shutdown handshake, got %v", err)
 	}
 }

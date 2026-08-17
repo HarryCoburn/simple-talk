@@ -80,12 +80,16 @@ func (c *Conn) SendHandshakeAck(name string) error {
 	return c.SendFrame(f)
 }
 
-func (c *Conn) SendChat(sender string, msg string) error {
-	cha := Chat{
+// Build a chat frame. Allows server to change a frame's sender.
+func NewChatFrame(sender string, msg string) (Frame, error) {
+	return newFrame(KindChat, Chat{
 		From: sender,
 		Text: msg,
-	}
-	f, err := newFrame(KindChat, cha)
+	})
+}
+
+func (c *Conn) SendChat(sender string, msg string) error {
+	f, err := NewChatFrame(sender, msg)
 	if err != nil {
 		return err
 	}

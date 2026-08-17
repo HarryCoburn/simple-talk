@@ -16,6 +16,11 @@ type ClientNumReq struct {
 	reply chan int
 }
 
+type NameReq struct {
+	name  string
+	reply chan bool
+}
+
 func main() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
@@ -105,11 +110,8 @@ func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
 	}
 	clientName := hs.Name
 
-	for c := range hub.clientList {
-		if c.Name == clientName {
-			// Name collision
-			return "", fmt.Errorf("Name already taken. Choose another")
-		}
+	if hub.nameTaken(clientName) {
+		return "", fmt.Errorf("Name already taken. Choose another")
 	}
 
 	return clientName, nil
