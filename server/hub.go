@@ -52,6 +52,7 @@ func (h *Hub) run() {
 			h.clientList[req.client] = struct{}{}
 			req.reply <- nil
 		case c := <-h.Unregister:
+			announceDisconnection(c.Name)
 			h.closeClient(c)
 		case f := <-h.Broadcast:
 

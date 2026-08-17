@@ -137,3 +137,12 @@ func announceConnection(name string) (protocol.Frame, error) {
 	}
 	return f, nil
 }
+
+func announceDisconnection(name string) (protocol.Frame, error) {
+	msg := fmt.Sprintf("%s has disconnected.", name)
+	f, err := protocol.NewSystemFrame(msg)
+	if err != nil {
+		return protocol.Frame{}, err
+	}
+	return f, nil
+}
