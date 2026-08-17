@@ -45,23 +45,10 @@ func (c *Conn) SendFrame(f Frame) error {
 	return c.enc.Encode(f) // If this starts failing, close the client.
 }
 
-func newFrame(kind Kind, payload any) (Frame, error) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return Frame{}, err
-	}
-
-	return Frame{
-		Kind:    kind,
-		Payload: encoded,
-	}, nil
-}
+// Senders
 
 func (c *Conn) SendHandshake(name string) error {
-	hs := Handshake{
-		Name: name,
-	}
-	f, err := newFrame(KindHandshake, hs)
+	f, err := NewHandshakeFrame(name)
 	if err != nil {
 		return err
 	}
@@ -70,26 +57,11 @@ func (c *Conn) SendHandshake(name string) error {
 }
 
 func (c *Conn) SendHandshakeAck(name string) error {
-	hs := HandshakeAck{
-		Name: name,
-	}
-	f, err := newFrame(KindHandshakeAck, hs)
+	f, err := NewHandshakeAckFrame(name)
 	if err != nil {
 		return err
 	}
 	return c.SendFrame(f)
-}
-
-// Build a chat frame. Allows server to change a frame's sender.
-func NewChatFrame(sender string, msg string) (Frame, error) {
-	return newFrame(KindChat, Chat{
-		From: sender,
-		Text: msg,
-	})
-}
-
-func NewSystemFrame(text string) (Frame, error) {
-	return newFrame(KindSystem, System{Text: text})
 }
 
 func (c *Conn) SendChat(sender string, msg string) error {
@@ -101,15 +73,11 @@ func (c *Conn) SendChat(sender string, msg string) error {
 }
 
 func (c *Conn) SendError(e string) error {
-	errM := Error{
-		Message: e,
-	}
-	f, err := newFrame(KindError, errM)
+	f, err := newFrame(KindError, e)
 	if err != nil {
 		return err
 	}
 	return c.SendFrame(f)
-
 }
 
 // Receiving
