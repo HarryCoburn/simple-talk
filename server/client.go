@@ -48,25 +48,16 @@ func (c *Client) readClientInput(hub *Hub) {
 			} else {
 				fmt.Printf("connection broke, not EOF: %v", err)
 			}
-			select {
-			case hub.Unregister <- c:
-				return
-			case <-hub.Done:
-				return
-			}
+			c.leave(hub)
+			return
 		}
 
 		if frame.Kind != protocol.KindChat {
 			fmt.Printf("Didn't receive a chat. Problem!")
-			select {
-			case hub.Unregister <- c:
-				return
-			case <-hub.Done:
-				return
-			}
+			c.leave(hub)
+			return
 		}
 
-		// Restamp the sender to make sure it uses the agreed name.
 		var chat protocol.Chat
 		if err := json.Unmarshal(frame.Payload, &chat); err != nil {
 			fmt.Printf("Discarding unreadable chat payload: %v\n", err)
@@ -85,6 +76,13 @@ func (c *Client) readClientInput(hub *Hub) {
 		case <-hub.Done:
 			return
 		}
+	}
+}
+
+func (c *Client) leave(hub *Hub) {
+	select {
+	case hub.Unregister <- c:
+	case <-hub.Done:
 	}
 }
 
