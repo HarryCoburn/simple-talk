@@ -16,9 +16,11 @@ type ClientNumReq struct {
 	reply chan int
 }
 
-type NameReq struct {
-	name  string
-	reply chan bool
+// A request to add a client to the hub. reply carries nil on success, or the
+// reason the registration was refused.
+type RegisterReq struct {
+	client *Client
+	reply  chan error
 }
 
 func main() {
@@ -63,7 +65,7 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 func handleNewConn(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the client
 	fullc := protocol.NewConn(conn)
-	clientName, err := verifyName(hub, fullc)
+	clientName, err := verifyName(fullc)
 	if err != nil {
 		fmt.Println(err)
 		fullc.Close()
@@ -72,32 +74,46 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 	newClient := newClient(fullc, clientName)
 
-	select {
-	case hub.Register <- newClient:
-		// Send handshake ack
-		err = fullc.SendHandshakeAck(clientName)
-		if err != nil {
-			fmt.Println(err)
-			fullc.Close()
-			return
+	if err := hub.register(newClient); err != nil {
+		// A taken name is the client's problem to fix, so tell them why before
+		// hanging up. A closed hub means there is nothing left to say.
+		if errors.Is(err, ErrNameTaken) {
+			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
+				fmt.Println(sendErr)
+			}
 		}
-		// Announce successful connection to others.
-		f, err := announceConnection(newClient.Name)
-		if err != nil {
-			fmt.Println(err)
-			fullc.Close()
-			return
-		}
-		hub.Broadcast <- f
-	case <-hub.Done:
-		conn.Close()
+		fullc.Close()
 		return
 	}
+
+	// From here the client is in the hub's list, so every failure has to leave
+	// through the hub. The hub owns the socket and closes it.
+	err = fullc.SendHandshakeAck(clientName)
+	if err != nil {
+		fmt.Println(err)
+		newClient.leave(hub)
+		return
+	}
+	// Announce successful connection to others.
+	f, err := announceConnection(newClient.Name)
+	if err != nil {
+		fmt.Println(err)
+		newClient.leave(hub)
+		return
+	}
+	// Guarded: an unguarded send here blocks forever if the hub stops between
+	// registering and announcing, and this goroutine never exits.
+	select {
+	case hub.Broadcast <- f:
+	case <-hub.Done:
+		return
+	}
+
 	go newClient.processClientOutQueue(hub)
 	go newClient.readClientInput(hub)
 }
 
-func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
+func verifyName(fullc *protocol.Conn) (string, error) {
 	// Get the frame for name entry.
 	fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout))
 	f, err := fullc.Recv()
@@ -116,13 +132,9 @@ func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Something wrong with the name payload: %v", err)
 	}
-	clientName := hs.Name
-
-	if hub.nameTaken(clientName) {
-		return "", fmt.Errorf("Name already taken. Choose another")
-	}
-
-	return clientName, nil
+	// The name is only checked for availability at registration time, where the
+	// check and the insert are one atomic hub operation.
+	return hs.Name, nil
 }
 
 func announceConnection(name string) (protocol.Frame, error) {

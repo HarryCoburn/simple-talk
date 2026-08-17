@@ -53,6 +53,14 @@ func systemText(t *testing.T, f protocol.Frame) string {
 	return chat.Text
 }
 
+// Registers a client, failing the test if the hub refuses it.
+func mustRegister(t *testing.T, hub *Hub, c *Client) {
+	t.Helper()
+	if err := hub.register(c); err != nil {
+		t.Fatalf("Could not register %q: %v", c.Name, err)
+	}
+}
+
 func newTestHub(t *testing.T) (*Hub, func()) {
 	chatHub := newHub()
 
