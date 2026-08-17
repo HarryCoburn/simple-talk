@@ -15,47 +15,57 @@ import (
 
 const userNamePrompt = "Please state your username: "
 
+// main connects to the chat server, sends a handshake through setUserName, then runs a receive loop
+// and send loop concurrently. The receive loop prints incoming messages and closes dead on disconnect;
+// the send loop reads stdin and stops once dead is closed, so a server-side disconnect doesn't leave it
+// blocking on input.
 func main() {
 	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
 	if err != nil {
 		log.Fatal("Client could not dial to the server.")
 	}
 	conn := protocol.NewConn(bareConn)
-	defer conn.Close()
+	defer conn.Close() // This will also close bareConn
 
-	inputScanner := bufio.NewScanner(os.Stdin)
-	name, err := setUserName(conn, inputScanner)
+	// Handshake
+	name, err := setUserName(conn, bufio.NewScanner(os.Stdin))
 	if err != nil {
 		fmt.Printf("Problem with setting username: %v", err)
 		return
 	}
 
 	dead := make(chan struct{})
-	go func() {
-		defer close(dead)
-		for {
-			f, err := conn.Recv()
-			if err != nil {
-				fmt.Printf("\nDisconnected: %v\n", err)
-				return
-			}
-			if f.Kind == protocol.KindChat {
-				var msg protocol.Chat
-				if err := json.Unmarshal(f.Payload, &msg); err != nil {
-					continue
-				}
-				fmt.Println(msg.Text)
-			}
-		}
-	}()
+	go receiveLoop(conn, dead)
+	sendLoop(conn, name, bufio.NewScanner(os.Stdin), dead)
 
-	for inputScanner.Scan() {
+}
+
+func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
+	defer close(dead)
+	for {
+		f, err := conn.Recv()
+		if err != nil {
+			fmt.Printf("\nDisconnected: %v\n", err)
+			return
+		}
+		if f.Kind == protocol.KindChat {
+			var msg protocol.Chat
+			if err := json.Unmarshal(f.Payload, &msg); err != nil {
+				continue
+			}
+			fmt.Println(msg.Text)
+		}
+	}
+}
+
+func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan struct{}) {
+	for scan.Scan() {
 		select {
 		case <-dead:
 			return
 		default:
 		}
-		if err := conn.SendChat(name, inputScanner.Text()); err != nil {
+		if err := conn.SendChat(name, scan.Text()); err != nil {
 			fmt.Printf("Send failed: %v\n", err)
 			return
 		}
