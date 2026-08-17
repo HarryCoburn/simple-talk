@@ -27,7 +27,8 @@ func newClient(conn *protocol.Conn, name string) *Client {
 
 func (c *Client) processClientOutQueue() {
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
-	defer c.Conn.Close()
+	// The socket belongs to hub.closeClient, which is also the only closer of
+	// c.Out, so this loop never closes the connection itself.
 	for frame := range c.Out {
 		// Out should hold a completed frame
 		err := c.Conn.SendFrame(frame)

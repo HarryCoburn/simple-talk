@@ -118,9 +118,12 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 		t.Errorf("Client sent Hello, Output pipe got %q", got)
 	}
 
+	// Closing Out stops the write loop but leaves the socket alone; the hub owns
+	// the connection and closes it as part of closeClient.
 	close(chatClient.Out)
+	fullc.Close()
 	if _, err = peer.Recv(); !errors.Is(err, io.EOF) {
-		t.Errorf("Did not receive io.EOF after closing Out: %T %v", err, err)
+		t.Errorf("Did not receive io.EOF after closing the connection: %T %v", err, err)
 	}
 }
 
