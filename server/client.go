@@ -43,10 +43,21 @@ func (c *Client) readClientInput(hub *Hub) {
 		// Reads what the client writes. Closes client safely if there is a problem with reading.
 		frame, err := c.Conn.Recv()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			switch {
+			case errors.Is(err, io.EOF):
 				fmt.Println("Connection closed cleanly")
-			} else {
-				fmt.Printf("connection broke, not EOF: %v", err)
+			case errors.Is(err, protocol.ErrBadFrame), errors.Is(err, protocol.ErrFrameTooLarge):
+				// The protocol layer resynchronized to the next newline, so the
+				// stream is still usable. Tell the client and keep reading.
+				fmt.Printf("discarding unusable frame from %s: %v\n", c.Name, err)
+				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
+					fmt.Printf("could not report frame error to %s: %v\n", c.Name, sendErr)
+					c.leave(hub)
+					return
+				}
+				continue
+			default:
+				fmt.Printf("connection broke, not EOF: %v\n", err)
 			}
 			c.leave(hub)
 			return
