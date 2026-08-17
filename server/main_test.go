@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -96,7 +94,6 @@ func TestDroppedClientPath(t *testing.T) {
 	chatHub.Broadcast <- frame1 // Fill buffer
 	chatHub.Broadcast <- frame2 // Overload Client.Out, which should force server to drop the client.
 
-
 	if got := chatHub.clientCount(); got != 0 {
 		t.Errorf("Expected length 0, got %d", got)
 	}
@@ -122,7 +119,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	}
 
 	close(chatClient.Out)
-	if _, err = peer.Recv(); !errorsIs(err, io.EOF) {
+	if _, err = peer.Recv(); !errors.Is(err, io.EOF) {
 		t.Errorf("Did not receive io.EOF after closing Out: %T %v", err, err)
 	}
 }
@@ -141,7 +138,7 @@ func TestReadLoop(t *testing.T) {
 		t.Fatalf("Timed out trying to TestReadLoop")
 	}
 	if got := chatText(t, result); got != "Hello" {
-		t.Errorf("TestReadLoop did not receive correct response: %q", unpack.Text)
+		t.Errorf("TestReadLoop did not receive correct response: %q", got)
 	}
 
 }
@@ -184,7 +181,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	exited := make(chan struct{})
 	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
 	// Nothing is draining chatHub.Broadcast, so readClientInput parks in the
-		// send select until Done releases it.
+	// send select until Done releases it.
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
@@ -311,22 +308,23 @@ func TestAcceptLoop(t *testing.T) {
 	}
 	peer := protocol.NewConn(conn)
 	if err := peer.SendHandshake("Harry"); err != nil {
-			t.Fatalf("Could not send the handshake: %v", err)
-		}
+		t.Fatalf("Could not send the handshake: %v", err)
+	}
 	ackFrame, err := peer.Recv()
 
 	if err != nil {
 		t.Fatalf("Did not receive the handshake ack: %v", err)
 	}
 	if ackFrame.Kind != protocol.KindHandshakeAck {
-			t.Fatalf("Wanted a %q frame, got %q", protocol.KindHandshakeAck, ackFrame.Kind)
+		t.Fatalf("Wanted a %q frame, got %q", protocol.KindHandshakeAck, ackFrame.Kind)
 	}
 	var ack protocol.HandshakeAck
 	if err := json.Unmarshal(ackFrame.Payload, &ack); err != nil {
 		t.Fatalf("Could not unpack the ack payload: %v", err)
+	}
 
 	if ack.Name != "Harry" {
-			t.Errorf("Wanted the name %q back, got %q", "Harry", ack.Name)
+		t.Errorf("Wanted the name %q back, got %q", "Harry", ack.Name)
 	}
 
 	// Chat sent on the same connection the handshake used. verifyName and
@@ -342,7 +340,7 @@ func TestAcceptLoop(t *testing.T) {
 		t.Fatalf("Did not receive the broadcast: %v", err)
 	}
 
-	if got:=chatText(t, frame); got != "<Harry> Hello" {
+	if got := chatText(t, frame); got != "<Harry> Hello" {
 		t.Errorf("Wanted %q, got %q", "<Harry> Hello", got)
 	}
 
@@ -388,7 +386,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 
 	peer := protocol.NewConn(clientSide)
 	if err := peer.SendHandshake("Harry"); err != nil {
-			t.Fatalf("Could not send the handshake: %v", err)
+		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
 	// nameTaken and Register both observe a closed Done, so the selects are
