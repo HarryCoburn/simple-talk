@@ -47,6 +47,7 @@ func (h *Hub) run() {
 		case c := <-h.Unregister:
 			h.closeClient(c)
 		case f := <-h.Broadcast:
+			// TODO: Should the hub be doing all of this?
 			if f.Kind == protocol.KindChat {
 				decorated, err := decorateChat(f)
 				if err != nil {
