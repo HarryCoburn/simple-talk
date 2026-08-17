@@ -340,8 +340,8 @@ func TestAcceptLoop(t *testing.T) {
 		t.Fatalf("Did not receive the broadcast: %v", err)
 	}
 
-	if got := chatText(t, frame); got != "<Harry> Hello" {
-		t.Errorf("Wanted %q, got %q", "<Harry> Hello", got)
+	if got := systemText(t, frame); got != "Harry has connected." {
+		t.Errorf("Wanted %q, got %q", "Harry has connected.", got)
 	}
 
 	if got := chatHub.clientCount(); got != 1 {

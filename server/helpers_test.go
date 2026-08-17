@@ -40,6 +40,19 @@ func chatText(t *testing.T, f protocol.Frame) string {
 	return chat.Text
 }
 
+// Unpacks a frame that is expected to be a system, returning its text.
+func systemText(t *testing.T, f protocol.Frame) string {
+	t.Helper()
+	if f.Kind != protocol.KindSystem {
+		t.Fatalf("Wanted a %q frame, got %q", protocol.KindSystem, f.Kind)
+	}
+	var chat protocol.System
+	if err := json.Unmarshal(f.Payload, &chat); err != nil {
+		t.Fatalf("Could not unpack the chat payload: %v", err)
+	}
+	return chat.Text
+}
+
 func newTestHub(t *testing.T) (*Hub, func()) {
 	chatHub := newHub()
 

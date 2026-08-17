@@ -72,15 +72,16 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 	newClient := newClient(fullc, clientName)
 
-	err = fullc.SendHandshakeAck(clientName)
-	if err != nil {
-		fmt.Println(err)
-		fullc.Close()
-		return
-	}
-
 	select {
 	case hub.Register <- newClient:
+		// Send handshake ack
+		err = fullc.SendHandshakeAck(clientName)
+		if err != nil {
+			fmt.Println(err)
+			fullc.Close()
+			return
+		}
+		// Announce successful connection to others.
 		f, err := announceConnection(newClient.Name)
 		if err != nil {
 			fmt.Println(err)
