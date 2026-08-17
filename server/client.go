@@ -33,7 +33,7 @@ func (c *Client) processClientOutQueue(hub *Hub) {
 		// Out should hold a completed frame
 		err := c.Conn.SendFrame(frame)
 		if err != nil {
-			fmt.Println(err)
+			log.Printf("write to %s failed: %v", c.Name, err)
 			// Tell the hub to close since Out won't drain after this loop stops.
 			c.leave(hub)
 			return
@@ -48,7 +48,7 @@ func (c *Client) readClientInput(hub *Hub) {
 		if err != nil {
 			switch {
 			case errors.Is(err, io.EOF):
-				fmt.Println("Connection closed cleanly")
+				log.Print("Connection closed cleanly")
 			case errors.Is(err, protocol.ErrBadFrame), errors.Is(err, protocol.ErrFrameTooLarge):
 				fmt.Printf("discarding unsuable frame from %s: %v\n", c.Name, err)
 				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
@@ -58,7 +58,7 @@ func (c *Client) readClientInput(hub *Hub) {
 				}
 				continue
 			default:
-				fmt.Printf("connection broke, not EOF: %v", err)
+				log.Printf("connection broke, not EOF: %v", err)
 			}
 			c.leave(hub)
 			return

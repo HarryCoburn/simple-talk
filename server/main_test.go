@@ -22,7 +22,7 @@ func TestRegisterClient(t *testing.T) {
 	}
 
 	// Register a client
-	chatHub.Register <- &Client{Out: make(chan protocol.Frame, 1)}
+	mustRegister(t, chatHub, &Client{Out: make(chan protocol.Frame, 1)})
 
 	if got := chatHub.clientCount(); got != 1 {
 		t.Errorf("Expected length 1, got %d", got)
@@ -37,7 +37,7 @@ func TestDeregisterClient(t *testing.T) {
 	chatClient := &Client{Out: make(chan protocol.Frame, 1)}
 
 	// Register, then deregister the client
-	chatHub.Register <- chatClient
+	mustRegister(t, chatHub, chatClient)
 	chatHub.Unregister <- chatClient
 
 	// Testing
@@ -54,6 +54,62 @@ func TestDeregisterClient(t *testing.T) {
 
 }
 
+// The name check and the insert are one hub operation, so a name can only be
+// claimed once no matter how the registrations interleave.
+func TestRegisterRejectsADuplicateName(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+	first := &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)}
+	mustRegister(t, chatHub, first)
+
+	err := chatHub.register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+	if !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("Wanted ErrNameTaken for a second %q, got %v", "Harry", err)
+	}
+	if got := chatHub.clientCount(); got != 1 {
+		t.Errorf("Expected the duplicate to be refused, hub holds %d clients", got)
+	}
+
+	// The name frees up once its holder leaves.
+	chatHub.Unregister <- first
+	mustRegister(t, chatHub, &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+}
+
+// Racing registrations must not both win. Without an atomic check-and-insert
+// both goroutines can see a free name.
+func TestRegisterIsAtomicUnderRacingNames(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+
+	const racers = 8
+	var wg sync.WaitGroup
+	results := make(chan error, racers)
+	for range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- chatHub.register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	won := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			won++
+		case errors.Is(err, ErrNameTaken):
+		default:
+			t.Errorf("Unexpected registration error: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Errorf("Wanted exactly 1 client to claim the name, %d did", won)
+	}
+	if got := chatHub.clientCount(); got != 1 {
+		t.Errorf("Wanted 1 registered client, got %d", got)
+	}
+}
+
 // Test if broadcasting works to connected clients
 func TestBroadcast(t *testing.T) {
 	chatHub, _ := newTestHub(t)
@@ -61,8 +117,8 @@ func TestBroadcast(t *testing.T) {
 	client2 := &Client{Name: "Bob", Out: make(chan protocol.Frame, 1)}
 
 	f := mustChatFrame(t, "Alice", "Test")
-	chatHub.Register <- client1
-	chatHub.Register <- client2
+	mustRegister(t, chatHub, client1)
+	mustRegister(t, chatHub, client2)
 	chatHub.Broadcast <- f
 	var f1 protocol.Frame
 	var f2 protocol.Frame
@@ -89,7 +145,7 @@ func TestBroadcast(t *testing.T) {
 func TestDroppedClientPath(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	client := &Client{Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
-	chatHub.Register <- client
+	mustRegister(t, chatHub, client)
 	frame1 := mustChatFrame(t, "Alice", "Test")
 	frame2 := mustChatFrame(t, "Alice", "Received")
 	chatHub.Broadcast <- frame1 // Fill buffer
@@ -299,11 +355,11 @@ func TestEndtoEnd(t *testing.T) {
 	bob.Client.Name = "Bob"
 	chatHub, _ := newTestHub(t) // newTestHub() starts hub.run()
 
-	chatHub.Register <- alice.Client
+	mustRegister(t, chatHub, alice.Client)
 	go alice.Client.processClientOutQueue(chatHub)
 	go alice.Client.readClientInput(chatHub)
 
-	chatHub.Register <- bob.Client
+	mustRegister(t, chatHub, bob.Client)
 	go bob.Client.processClientOutQueue(chatHub)
 	go bob.Client.readClientInput(chatHub)
 
@@ -344,7 +400,7 @@ func TestTeardownCascade(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for _, c := range []*Client{alice.Client, bob.Client} {
-		chatHub.Register <- c
+		mustRegister(t, chatHub, c)
 		wg.Add(2)
 		go func() { defer wg.Done(); c.processClientOutQueue(chatHub) }()
 		go func() { defer wg.Done(); c.readClientInput(chatHub) }()
@@ -473,9 +529,73 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
-	// nameTaken and Register both observe a closed Done, so the selects are
-	// deterministic: handleNewConn bails out and closes the connection.
+	// register observes the closed Done, so the selects are deterministic:
+	// handleNewConn bails out and closes the connection. A shutting-down server
+	// has nobody to explain itself to, so this is a silent hangup, not an error
+	// frame.
 	if _, err := peer.Recv(); !errors.Is(err, io.EOF) {
 		t.Errorf("Wanted io.EOF after a post-shutdown handshake, got %v", err)
+	}
+}
+
+// A refused name is the client's problem to fix, so the server says why before
+// hanging up instead of dropping the connection silently.
+func TestHandleNewConnReportsATakenName(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+	mustRegister(t, chatHub, &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+
+	serverSide, clientSide := net.Pipe()
+	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
+	go handleNewConn(chatHub, serverSide)
+
+	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("Could not set a deadline: %v", err)
+	}
+	peer := protocol.NewConn(clientSide)
+	if err := peer.SendHandshake("Harry"); err != nil {
+		t.Fatalf("Could not send the handshake: %v", err)
+	}
+
+	f, err := peer.Recv()
+	if err != nil {
+		t.Fatalf("Did not receive the rejection: %v", err)
+	}
+	if f.Kind != protocol.KindError {
+		t.Fatalf("Wanted a %q frame for a taken name, got %q", protocol.KindError, f.Kind)
+	}
+	if _, err := peer.Recv(); !errors.Is(err, io.EOF) {
+		t.Errorf("Wanted the server to hang up after rejecting, got %v", err)
+	}
+	if got := chatHub.clientCount(); got != 1 {
+		t.Errorf("The rejected client was registered anyway, hub holds %d", got)
+	}
+}
+
+// The connect announcement used to be an unguarded send, so a hub that stopped
+// between registering and announcing parked this goroutine forever.
+func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
+	chatHub, stop := newTestHub(t)
+
+	serverSide, clientSide := net.Pipe()
+	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
+
+	exited := make(chan struct{})
+	go func() { handleNewConn(chatHub, serverSide); close(exited) }()
+
+	peer := protocol.NewConn(clientSide)
+	if err := peer.SendHandshake("Harry"); err != nil {
+		t.Fatalf("Could not send the handshake: %v", err)
+	}
+	// Take the ack, then stop the hub. Nothing drains Broadcast after that, so
+	// the announcement has only the Done arm left to take.
+	if _, err := peer.Recv(); err != nil {
+		t.Fatalf("Did not receive the handshake ack: %v", err)
+	}
+	stop()
+
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		t.Fatal("handleNewConn did not exit after the hub stopped")
 	}
 }

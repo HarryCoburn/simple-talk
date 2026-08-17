@@ -26,16 +26,18 @@ func main() {
 	conn := protocol.NewConn(bareConn)
 	defer conn.Close() // This will also close bareConn
 
+	stdin := bufio.NewScanner(os.Stdin)
+
 	// Handshake
-	name, err := setUserName(conn, bufio.NewScanner(os.Stdin))
+	name, err := setUserName(conn, stdin)
 	if err != nil {
-		fmt.Printf("Problem with setting username: %v", err)
+		log.Printf("Problem with setting username: %v\n", err)
 		return
 	}
 
 	dead := make(chan struct{})
 	go receiveLoop(conn, dead)
-	sendLoop(conn, name, bufio.NewScanner(os.Stdin), dead)
+	sendLoop(conn, name, stdin, dead)
 
 }
 
@@ -113,6 +115,15 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 				fmt.Printf("Receive error while setting username: %v", err)
 				return "", err
 			}
+			// Check for a rejection message from the server
+			if resp.Kind == protocol.KindError {
+				var serverErr protocol.Error
+				if err := json.Unmarshal(resp.Payload, &serverErr); err != nil {
+					return "", fmt.Errorf("server rejected the name: %v", err)
+				}
+				return "", errors.New(serverErr.Message)
+			}
+
 			if resp.Kind != protocol.KindHandshakeAck {
 				return "", errors.New("Didn't receive handshake ack from server")
 
@@ -120,7 +131,7 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 			var ack protocol.HandshakeAck
 			err = json.Unmarshal(resp.Payload, &ack)
 			if err != nil {
-				return "", nil
+				return "", fmt.Errorf("could not read the handshake ack: %w", err)
 			}
 			// Valid.
 			return ack.Name, nil

@@ -136,6 +136,30 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	}
 }
 
+// A rejection carries a reason, and the user is told what it was.
+func TestSetUserNameSurfacesTheServersReason(t *testing.T) {
+	pipe := newTestPipe(t)
+
+	go func() {
+		if _, err := pipe.Peer.Recv(); err != nil {
+			return
+		}
+		pipe.Peer.SendError("that name is already taken")
+	}()
+
+	var err error
+	captureStdout(t, func() {
+		_, err = setUserName(pipe.Client, scannerOf("alice"))
+	})
+
+	if err == nil {
+		t.Fatal("setUserName returned no error for a rejected name")
+	}
+	if err.Error() != "that name is already taken" {
+		t.Errorf("Wanted the server's reason back, got %q", err.Error())
+	}
+}
+
 // If the server hangs up before replying, the read fails and the error surfaces.
 func TestSetUserNameReportsAReceiveError(t *testing.T) {
 	pipe := newTestPipe(t)
