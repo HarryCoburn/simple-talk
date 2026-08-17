@@ -11,6 +11,7 @@ const (
 	KindHandshakeAck Kind = "handshake_ack"
 	KindChat         Kind = "chat"
 	KindError        Kind = "error"
+	KindSystem       Kind = "system"
 )
 
 type Frame struct {
@@ -33,4 +34,8 @@ type Chat struct {
 
 type Error struct {
 	Message string `json:"message"`
+}
+
+type System struct {
+	Text string `json:"text"`
 }

@@ -56,6 +56,14 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 			}
 			fmt.Println(msg.Text)
 		}
+		if f.Kind == protocol.KindSystem {
+			var msg protocol.System
+			if err := json.Unmarshal(f.Payload, &msg); err != nil {
+				continue
+			}
+			fmt.Println(msg.Text)
+
+		}
 		// TODO: Add additional frame entries, especially the error frames.
 	}
 }

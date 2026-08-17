@@ -88,6 +88,10 @@ func NewChatFrame(sender string, msg string) (Frame, error) {
 	})
 }
 
+func NewSystemFrame(text string) (Frame, error) {
+	return newFrame(KindSystem, System{Text: text})
+}
+
 func (c *Conn) SendChat(sender string, msg string) error {
 	f, err := NewChatFrame(sender, msg)
 	if err != nil {

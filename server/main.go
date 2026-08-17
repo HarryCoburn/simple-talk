@@ -126,7 +126,7 @@ func verifyName(hub *Hub, fullc *protocol.Conn) (string, error) {
 
 func announceConnection(name string) (protocol.Frame, error) {
 	msg := fmt.Sprintf("%s has connected.", name)
-	f, err := protocol.NewChatFrame(name, msg)
+	f, err := protocol.NewSystemFrame(msg)
 	if err != nil {
 		return protocol.Frame{}, err
 	}
