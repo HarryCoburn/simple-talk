@@ -13,7 +13,7 @@ import (
 
 const (
 	MaxFrameSize     = 8192
-	maxDiscardSize   = MaxFrameSize * 4
+	maxDiscardSize   = MaxFrameSize * 2
 	HandshakeTimeout = (time.Second * 30)
 )
 
@@ -39,13 +39,14 @@ func NewConn(c net.Conn) *Conn {
 	}
 }
 
+// Senders
+
+// SendFrame writes the frame into the pipe
 func (c *Conn) SendFrame(f Frame) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.enc.Encode(f) // If this starts failing, close the client.
 }
-
-// Senders
 
 func (c *Conn) SendHandshake(name string) error {
 	f, err := NewHandshakeFrame(name)
@@ -73,7 +74,7 @@ func (c *Conn) SendChat(sender string, msg string) error {
 }
 
 func (c *Conn) SendError(e string) error {
-	f, err := newFrame(KindError, e)
+	f, err := NewErrorFrame(e)
 	if err != nil {
 		return err
 	}
@@ -146,6 +147,8 @@ func (c *Conn) Recv() (Frame, error) {
 	}
 	return f, nil
 }
+
+// Utilities
 
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	return c.conn.SetReadDeadline(t)
