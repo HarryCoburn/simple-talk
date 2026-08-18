@@ -41,7 +41,7 @@ func main() {
 
 }
 
-// receiveLoop listens to a FullConn for frames. If they are a KindChat Kind,
+// receiveLoop listens to a protocol.Conn for frames. If they are a KindChat or a KindSystem,
 // it displays the message. TODO: intercept additional frame types.
 func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 	defer close(dead)
@@ -70,7 +70,7 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 	}
 }
 
-// sendLoop sends information from stdin to a FullConn for processing. This will be replaced
+// sendLoop sends information from stdin to a protocol.Conn for processing. This will be replaced
 // once we begin BubbleTea usage.
 func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan struct{}) {
 	for scan.Scan() {
@@ -115,7 +115,7 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 				fmt.Printf("Receive error while setting username: %v", err)
 				return "", err
 			}
-			// Check for a rejection message from the server
+
 			if resp.Kind == protocol.KindError {
 				var serverErr protocol.Error
 				if err := json.Unmarshal(resp.Payload, &serverErr); err != nil {
@@ -125,7 +125,7 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 			}
 
 			if resp.Kind != protocol.KindHandshakeAck {
-				return "", errors.New("Didn't receive handshake ack from server")
+				return "", errors.New("Didn't receive handshake ack or error from server")
 
 			}
 			var ack protocol.HandshakeAck
@@ -140,6 +140,7 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 			// Normal closure
 			return "", nil
 		}
+		// Catch for any other kind of error
 		return "", errors.New("Username Failure.")
 	}
 
