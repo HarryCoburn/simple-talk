@@ -13,13 +13,14 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
-// testPipe is a client Conn directly wired to Peer over an in-memory
+// testPipe is a Client protocol.Conn directly wired to Peer protocol.Conn over an in-memory
 // connection to avoid using real sockets.
 type testPipe struct {
 	Client *protocol.Conn // The test connection
 	Peer   *protocol.Conn // The mocked server
 }
 
+// newTestPipe does what it says on the tin. Makes a testPipe struct, wires it up, and closes it cleanly.
 func newTestPipe(t *testing.T) testPipe {
 	t.Helper()
 	clientSide, serverSide := net.Pipe()
@@ -32,7 +33,8 @@ func newTestPipe(t *testing.T) testPipe {
 	return testPipe{Client: client, Peer: peer}
 }
 
-// scannerOf stands in for os.Stdin
+// scannerOf stands in for os.Stdin in testing.
+// If the separator ever changes, this will need an update.
 func scannerOf(lines ...string) *bufio.Scanner {
 	if len(lines) == 0 {
 		return bufio.NewScanner(strings.NewReader(""))
@@ -40,8 +42,10 @@ func scannerOf(lines ...string) *bufio.Scanner {
 	return bufio.NewScanner(strings.NewReader(strings.Join(lines, "\n") + "\n"))
 }
 
+// captureStdout reroutes os.Stdout temporarily to an os.Pipe we can
+// control and check.
 // TODO: Replace this with something better. Redirecting a process global
-// is dangerous.
+// like this is dangerous.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -83,7 +87,7 @@ func handshakeName(t *testing.T, f protocol.Frame) string {
 	return hs.Name
 }
 
-// chatFrom unpacks a frame expected to be a chat, returning sender and text.
+// chatFrom unpacks a KindChat frame, returning From and Text fields.
 func chatFrom(t *testing.T, f protocol.Frame) (string, string) {
 	t.Helper()
 	if f.Kind != protocol.KindChat {
@@ -96,7 +100,7 @@ func chatFrom(t *testing.T, f protocol.Frame) (string, string) {
 	return chat.From, chat.Text
 }
 
-// waitClosed fails the test if c is not closed within a short grace period.
+// waitClosed fails tests if c is not closed within a short grace period.
 // Keeps a broken goroutine from hanging the whole suite.
 func waitClosed(t *testing.T, c <-chan struct{}, what string) {
 	t.Helper()
