@@ -31,8 +31,7 @@ func (c *Client) processClientOutQueue(hub *Hub) {
 	// to close.
 	for frame := range c.Out {
 		// Out should hold a completed frame
-		err := c.Conn.SendFrame(frame)
-		if err != nil {
+		if err := c.Conn.SendFrame(frame); err != nil {
 			log.Printf("write to %s failed: %v", c.Name, err)
 			// Tell the hub to close since Out won't drain after this loop stops.
 			c.leave(hub)

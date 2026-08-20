@@ -83,12 +83,12 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	}
 
 	// Send handshake ack
-	err = fullc.SendHandshakeAck(clientName)
-	if err != nil {
+	if err := fullc.SendHandshakeAck(clientName); err != nil {
 		fmt.Println(err)
 		newClient.leave(hub)
 		return
 	}
+
 	// Announce successful connection to others.
 	f, err := announceConnection(newClient.Name)
 	if err != nil {
@@ -121,8 +121,7 @@ func verifyName(fullc *protocol.Conn) (string, error) {
 	}
 
 	var hs protocol.Handshake
-	err = json.Unmarshal(f.Payload, &hs)
-	if err != nil {
+	if err := json.Unmarshal(f.Payload, &hs); err != nil {
 		return "", fmt.Errorf("Something wrong with the name payload: %v", err)
 	}
 

@@ -11,6 +11,8 @@ var (
 	ErrHubClosed = errors.New("server is shutting down")
 )
 
+const messageFormat = "<%s> %s"
+
 type Hub struct {
 	Register   chan RegisterReq     // Register a new client
 	Unregister chan *Client         // Unregister a client
@@ -34,8 +36,6 @@ func newHub() *Hub {
 	}
 	return &hub
 }
-
-const messageFormat = "<%s> %s"
 
 // Start the hub
 func (h *Hub) run() {
@@ -78,11 +78,6 @@ func (h *Hub) run() {
 	}
 }
 
-//	func (h *Hub) clientCount() int {
-//		ch := make(chan int, 1)
-//		h.Query <- ClientNumReq{reply: ch}
-//		return <-ch
-//	}
 func (h *Hub) register(c *Client) error {
 	// Buffering
 	ch := make(chan error, 1)
