@@ -51,23 +51,24 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 			fmt.Printf("\nDisconnected: %v\n", err)
 			return
 		}
-		if f.Kind == protocol.KindChat {
+		switch f.Kind {
+		case protocol.KindChat:
 			var msg protocol.Chat
 			if err := json.Unmarshal(f.Payload, &msg); err != nil {
 				continue
 			}
 			fmt.Println(msg.Text)
-		}
-		if f.Kind == protocol.KindSystem {
+		case protocol.KindSystem:
 			var msg protocol.System
 			if err := json.Unmarshal(f.Payload, &msg); err != nil {
 				continue
 			}
 			fmt.Println(msg.Text)
-
+		default:
+			log.Print("Client received frame kind it can't process yet.")
 		}
-		// TODO: Add additional frame entries, especially the error frames.
 	}
+
 }
 
 // sendLoop sends information from stdin to a protocol.Conn for processing. This will be replaced
@@ -105,8 +106,7 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 				continue
 			}
 			// Try to send it to the server for further validation
-			err = conn.SendHandshake(cleaned)
-			if err != nil {
+			if err := conn.SendHandshake(cleaned); err != nil {
 				return "", err
 			}
 			// Check the response
@@ -115,7 +115,6 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 				fmt.Printf("Receive error while setting username: %v", err)
 				return "", err
 			}
-
 			if resp.Kind == protocol.KindError {
 				var serverErr protocol.Error
 				if err := json.Unmarshal(resp.Payload, &serverErr); err != nil {
@@ -123,14 +122,12 @@ func setUserName(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, erro
 				}
 				return "", errors.New(serverErr.Message)
 			}
-
 			if resp.Kind != protocol.KindHandshakeAck {
 				return "", errors.New("Didn't receive handshake ack or error from server")
 
 			}
 			var ack protocol.HandshakeAck
-			err = json.Unmarshal(resp.Payload, &ack)
-			if err != nil {
+			if err := json.Unmarshal(resp.Payload, &ack); err != nil {
 				return "", fmt.Errorf("could not read the handshake ack: %w", err)
 			}
 			// Valid.

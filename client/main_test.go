@@ -137,7 +137,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 }
 
 // A rejection carries a reason, and the user is told what it was.
-func TestSetUserNameSurfacesTheServersReason(t *testing.T) {
+func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 	pipe := newTestPipe(t)
 
 	go func() {
@@ -160,7 +160,7 @@ func TestSetUserNameSurfacesTheServersReason(t *testing.T) {
 	}
 }
 
-// If the server hangs up before replying, the read fails and the error surfaces.
+// If the server hangs up before replying, the read fails and the error is shown.
 func TestSetUserNameReportsAReceiveError(t *testing.T) {
 	pipe := newTestPipe(t)
 
