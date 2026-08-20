@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -52,18 +53,14 @@ func (h *Hub) run() {
 			h.clientList[req.client] = struct{}{}
 			req.reply <- nil
 		case c := <-h.Unregister:
-			announceDisconnection(c.Name)
+			f, err := announceDisconnection(c.Name)
+			if err != nil {
+				log.Print(err)
+			}
+			h.deliver(f)
 			h.closeClient(c)
 		case f := <-h.Broadcast:
-
-			// Fanout
-			for c := range h.clientList {
-				select {
-				case c.Out <- f:
-				default: // If a c.Out cannot be reached, assume the client has left and close it.
-					h.closeClient(c)
-				}
-			}
+			h.deliver(f)
 		case req := <-h.Query:
 			// Currenly only handles clientList length requests
 			clientNum := len(h.clientList)
@@ -127,4 +124,14 @@ func (h *Hub) closeClient(c *Client) {
 		c.Conn.Close()
 	}
 	delete(h.clientList, c)
+}
+
+func (h *Hub) deliver(f protocol.Frame) {
+	for c := range h.clientList {
+		select {
+		case c.Out <- f:
+		default: // If a c.Out cannot be reached, assume the client has left and close it.
+			h.closeClient(c)
+		}
+	}
 }
