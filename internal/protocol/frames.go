@@ -4,7 +4,7 @@ import "encoding/json"
 
 // Encoders
 
-// newFrame encodes a payload and returns a kind of frame ready to be sent.
+// newFrame encodes a subframe payload and returns a full Frame ready for sending.
 func newFrame(kind Kind, payload any) (Frame, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {

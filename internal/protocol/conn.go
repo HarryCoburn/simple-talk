@@ -23,6 +23,7 @@ var (
 	ErrUnrecoverable = errors.New("protocol: stream desynchronized, connection unsuable")
 )
 
+// Conn is the connection structure for the chat protocol
 type Conn struct {
 	conn net.Conn
 	r    *bufio.Reader

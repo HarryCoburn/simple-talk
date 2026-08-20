@@ -15,8 +15,8 @@ const (
 )
 
 type Frame struct {
-	Kind    Kind            `json:"kind"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	Kind    Kind            `json:"kind"`              // The kind of frame the protocol is sending
+	Payload json.RawMessage `json:"payload,omitempty"` // The contents of the frame kind, of a type listed below.
 }
 
 type Handshake struct {
