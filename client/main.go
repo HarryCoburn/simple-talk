@@ -44,7 +44,7 @@ func main() {
 // receiveLoop listens to a protocol.Conn for frames. If they are a KindChat or a KindSystem,
 // it displays the message. TODO: intercept additional frame types.
 func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
-	defer close(dead)
+	defer func() { fmt.Println("You have been disconnected."); close(dead) }()
 	for {
 		f, err := conn.Recv()
 		if err != nil {
