@@ -75,7 +75,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	if err := hub.register(newClient); err != nil {
 		if errors.Is(err, ErrNameTaken) {
 			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
-				fmt.Println(sendErr)
+				log.Printf("could not report taken name to %s: %v", clientName, sendErr)
 			}
 		}
 		fullc.Close()
@@ -84,7 +84,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 	// Send handshake ack
 	if err := fullc.SendHandshakeAck(clientName); err != nil {
-		fmt.Println(err)
+		log.Printf("handshake ack to %s has failed: %v", clientName, err)
 		newClient.leave(hub)
 		return
 	}
@@ -92,7 +92,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	// Announce successful connection to others.
 	f, err := announceConnection(newClient.Name)
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("could not build connect announcement for %s: %v", newClient.Name, err)
 		newClient.leave(hub)
 		return
 	}

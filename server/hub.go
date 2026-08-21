@@ -53,12 +53,15 @@ func (h *Hub) run() {
 			h.clientList[req.client] = struct{}{}
 			req.reply <- nil
 		case c := <-h.Unregister:
+			if _, ok := h.clientList[c]; !ok {
+				continue // Client is already unregistered.
+			}
+			h.closeClient(c)
 			f, err := announceDisconnection(c.Name)
 			if err != nil {
-				log.Print(err)
+				log.Printf("could not build disconnect announcement for %s: %v", c.Name, err)
 			}
 			h.deliver(f)
-			h.closeClient(c)
 		case f := <-h.Broadcast:
 			h.deliver(f)
 		case req := <-h.Query:
