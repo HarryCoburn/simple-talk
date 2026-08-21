@@ -31,7 +31,7 @@ func main() {
 	// Handshake
 	name, err := setUserName(conn, stdin)
 	if err != nil {
-		log.Printf("Problem with setting username: %v\n", err)
+		log.Printf("Problem with setting username: %v", err)
 		return
 	}
 

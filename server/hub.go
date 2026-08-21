@@ -55,7 +55,7 @@ func (h *Hub) run() {
 		case c := <-h.Unregister:
 			f, err := announceDisconnection(c.Name)
 			if err != nil {
-				log.Print(err)
+				log.Printf("could not build disconnect announcement for %s: %v", c.Name, err)
 			}
 			h.deliver(f)
 			h.closeClient(c)
