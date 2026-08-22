@@ -94,5 +94,10 @@ func decorateChat(f protocol.Frame) (protocol.Frame, error) {
 	if err := json.Unmarshal(f.Payload, &chat); err != nil {
 		return protocol.Frame{}, err
 	}
-	return protocol.NewChatFrame(chat.From, fmt.Sprintf(messageFormat, chat.From, chat.Text))
+	switch string(chat.Text[0]) {
+	case ":":
+		return protocol.NewChatFrame(chat.From, fmt.Sprintf(poseFormat, chat.From, chat.Text[1:]))
+	default:
+		return protocol.NewChatFrame(chat.From, fmt.Sprintf(messageFormat, chat.From, chat.Text))
+	}
 }

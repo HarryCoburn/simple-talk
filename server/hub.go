@@ -13,6 +13,7 @@ var (
 )
 
 const messageFormat = "<%s> %s"
+const poseFormat = "%s %s"
 
 type Hub struct {
 	Register   chan RegisterReq     // Register a new client
