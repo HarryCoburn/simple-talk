@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -65,7 +66,7 @@ func (c *Client) readClientInput(hub *Hub) {
 
 		switch frame.Kind {
 		case protocol.KindChat:
-			decorated, err := decorateChat(frame)
+			decorated, isCommand, err := decorateChat(frame)
 			if err != nil {
 				log.Printf("dropping malformed chat frame: %v", err)
 				continue
@@ -89,15 +90,23 @@ func (c *Client) leave(hub *Hub) {
 	}
 }
 
-func decorateChat(f protocol.Frame) (protocol.Frame, error) {
+func decorateChat(f protocol.Frame) (protocol.Frame, bool, error) {
 	var chat protocol.Chat
 	if err := json.Unmarshal(f.Payload, &chat); err != nil {
-		return protocol.Frame{}, err
+		return protocol.Frame{}, false, fmt.Errorf("decorate chat: %w", err)
 	}
-	switch string(chat.Text[0]) {
-	case ":":
-		return protocol.NewChatFrame(chat.From, fmt.Sprintf(poseFormat, chat.From, chat.Text[1:]))
-	default:
-		return protocol.NewChatFrame(chat.From, fmt.Sprintf(messageFormat, chat.From, chat.Text))
+
+	format := messageFormat
+	text := chat.Text
+	if strings.HasPrefix(chat.Text, ":") {
+		format = poseFormat
+		text = chat.Text[1:]
 	}
+
+	frame, err := protocol.NewChatFrame(chat.From, fmt.Sprintf(format, chat.From, text))
+	if err != nil {
+		return protocol.Frame{}, false, err
+	}
+	return frame, false, nil
+
 }
