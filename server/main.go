@@ -1,15 +1,24 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+	"time"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 // A struct for requesting the number of clients connected
 type ClientNumReq struct {
 	reply chan int
+}
+
+type RegisterReq struct {
+	client *Client
+	reply  chan error
 }
 
 func main() {
@@ -53,21 +62,86 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 
 func handleNewConn(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the client
-	newClient := newClient(conn)
-	err := newClient.setUserName()
+	fullc := protocol.NewConn(conn)
+	clientName, err := verifyName(fullc)
 	if err != nil {
-		fmt.Printf("Error setting user name. Closing. Error received: %v", err)
-		conn.Close()
+		fmt.Println(err)
+		fullc.Close()
 		return
 	}
 
+	newClient := newClient(fullc, clientName)
+
+	if err := hub.register(newClient); err != nil {
+		if errors.Is(err, ErrNameTaken) {
+			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
+				log.Printf("could not report taken name to %s: %v", clientName, sendErr)
+			}
+		}
+		fullc.Close()
+		return
+	}
+
+	// Send handshake ack
+	if err := fullc.SendHandshakeAck(clientName); err != nil {
+		log.Printf("handshake ack to %s has failed: %v", clientName, err)
+		newClient.leave(hub)
+		return
+	}
+
+	// Announce successful connection to others.
+	f, err := announceConnection(newClient.Name)
+	if err != nil {
+		log.Printf("could not build connect announcement for %s: %v", newClient.Name, err)
+		newClient.leave(hub)
+		return
+	}
 	select {
-	case hub.Register <- newClient:
+	case hub.Broadcast <- f:
 	case <-hub.Done:
-		conn.Close()
 		return
 	}
-	go newClient.proceessClientOutQueue()
-	go newClient.readClientInput(hub)
 
+	go newClient.processClientOutQueue(hub)
+	go newClient.readClientInput(hub)
+}
+
+func verifyName(fullc *protocol.Conn) (string, error) {
+	// Get the frame for name entry.
+	fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout))
+	f, err := fullc.Recv()
+	if err != nil {
+		return "", fmt.Errorf("Problem with handshake frame: %v", err)
+	}
+	fullc.SetReadDeadline(time.Time{})
+
+	// Is it the right kind?
+	if f.Kind != protocol.KindHandshake {
+		return "", fmt.Errorf("Wrong frame type sent in handshake! : %v", err)
+	}
+
+	var hs protocol.Handshake
+	if err := json.Unmarshal(f.Payload, &hs); err != nil {
+		return "", fmt.Errorf("Something wrong with the name payload: %v", err)
+	}
+
+	return hs.Name, nil
+}
+
+func announceConnection(name string) (protocol.Frame, error) {
+	msg := fmt.Sprintf("%s has connected.", name)
+	f, err := protocol.NewSystemFrame(msg)
+	if err != nil {
+		return protocol.Frame{}, err
+	}
+	return f, nil
+}
+
+func announceDisconnection(name string) (protocol.Frame, error) {
+	msg := fmt.Sprintf("%s has disconnected.", name)
+	f, err := protocol.NewSystemFrame(msg)
+	if err != nil {
+		return protocol.Frame{}, err
+	}
+	return f, nil
 }

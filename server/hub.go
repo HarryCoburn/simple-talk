@@ -1,28 +1,36 @@
 package main
 
-import "fmt"
+import (
+	"errors"
+	"log"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
+)
+
+var (
+	ErrNameTaken = errors.New("that name is already taken")
+	ErrHubClosed = errors.New("server is shutting down")
+)
+
+const messageFormat = "<%s> %s"
+const poseFormat = "%s %s"
 
 type Hub struct {
-	Register   chan *Client         // Register a new client
+	Register   chan RegisterReq     // Register a new client
 	Unregister chan *Client         // Unregister a client
-	Broadcast  chan Message         // Send a message to all clients
+	Broadcast  chan protocol.Frame  // Send a frame to all clients
 	Query      chan ClientNumReq    // Send a query to the server
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
 	clientList map[*Client]struct{} // Map of all clients.
 }
 
-type Message struct {
-	From *Client // Address of the client that sent the message
-	Data []byte  // Content of the message
-}
-
 // Create a new hub
 func newHub() *Hub {
 	hub := Hub{
-		Register:   make(chan *Client),
+		Register:   make(chan RegisterReq),
 		Unregister: make(chan *Client),
-		Broadcast:  make(chan Message),
+		Broadcast:  make(chan protocol.Frame),
 		Query:      make(chan ClientNumReq),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
@@ -31,30 +39,32 @@ func newHub() *Hub {
 	return &hub
 }
 
-const messageFormat = "<%s> %s"
-
 // Start the hub
 func (h *Hub) run() {
 	defer close(h.Finished)
 
 	for {
 		select {
-		case c := <-h.Register:
-			fmt.Println("Received a registration request.")
-			h.clientList[c] = struct{}{}
-		case c := <-h.Unregister:
-			fmt.Println("Received an unregistration request")
-			h.closeClient(c)
-		case msg := <-h.Broadcast:
-			msg.Data = fmt.Appendf(nil, messageFormat, msg.From.Name, msg.Data)
-			// Fanout. TODO, a field in Message to know to do a private send?
-			for c := range h.clientList {
-				select {
-				case c.Out <- msg:
-				default: // If a c.Out cannot be reached, assume the client has left and close it.
-					h.closeClient(c)
-				}
+		case req := <-h.Register:
+			// must check the name and insert in the same loop call
+			if h.nameInUse(req.client.Name) {
+				req.reply <- ErrNameTaken
+				continue
 			}
+			h.clientList[req.client] = struct{}{}
+			req.reply <- nil
+		case c := <-h.Unregister:
+			if _, ok := h.clientList[c]; !ok {
+				continue // Client is already unregistered.
+			}
+			h.closeClient(c)
+			f, err := announceDisconnection(c.Name)
+			if err != nil {
+				log.Printf("could not build disconnect announcement for %s: %v", c.Name, err)
+			}
+			h.deliver(f)
+		case f := <-h.Broadcast:
+			h.deliver(f)
 		case req := <-h.Query:
 			// Currenly only handles clientList length requests
 			clientNum := len(h.clientList)
@@ -69,10 +79,44 @@ func (h *Hub) run() {
 	}
 }
 
+func (h *Hub) register(c *Client) error {
+	// Buffering
+	ch := make(chan error, 1)
+	select {
+	case h.Register <- RegisterReq{client: c, reply: ch}:
+	case <-h.Done:
+		return ErrHubClosed
+	}
+	select {
+	case err := <-ch:
+		return err
+	case <-h.Done:
+		return ErrHubClosed
+	}
+}
+
 func (h *Hub) clientCount() int {
 	ch := make(chan int, 1)
-	h.Query <- ClientNumReq{reply: ch}
-	return <-ch
+	select {
+	case h.Query <- ClientNumReq{reply: ch}:
+	case <-h.Done:
+		return 0
+	}
+	select {
+	case n := <-ch:
+		return n
+	case <-h.Done:
+		return 0
+	}
+}
+
+func (h *Hub) nameInUse(name string) bool {
+	for c := range h.clientList {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Hub) closeClient(c *Client) {
@@ -80,5 +124,18 @@ func (h *Hub) closeClient(c *Client) {
 		return
 	}
 	close(c.Out)
+	if c.Conn != nil {
+		c.Conn.Close()
+	}
 	delete(h.clientList, c)
+}
+
+func (h *Hub) deliver(f protocol.Frame) {
+	for c := range h.clientList {
+		select {
+		case c.Out <- f:
+		default: // If a c.Out cannot be reached, assume the client has left and close it.
+			h.closeClient(c)
+		}
+	}
 }
