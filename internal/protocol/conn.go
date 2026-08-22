@@ -74,6 +74,22 @@ func (c *Conn) SendChat(sender string, msg string) error {
 	return c.SendFrame(f)
 }
 
+func (c *Conn) SendCommand(name string, args []string) error {
+	f, err := NewCommandFrame(name, args)
+	if err != nil {
+		return err
+	}
+	return c.SendFrame(f)
+}
+
+func (c *Conn) SendSystem(text string) error {
+	f, err := NewSystemFrame(text)
+	if err != nil {
+		return err
+	}
+	return c.SendFrame(f)
+}
+
 func (c *Conn) SendError(e string) error {
 	f, err := NewErrorFrame(e)
 	if err != nil {

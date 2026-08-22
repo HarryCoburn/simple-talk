@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"log"
+	"sort"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -19,7 +20,7 @@ type Hub struct {
 	Register   chan RegisterReq     // Register a new client
 	Unregister chan *Client         // Unregister a client
 	Broadcast  chan protocol.Frame  // Send a frame to all clients
-	Query      chan ClientNumReq    // Send a query to the server
+	Query      chan func(*Hub)      // Run a read-only query inside run(), where clientList is owned
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
 	clientList map[*Client]struct{} // Map of all clients.
@@ -31,7 +32,7 @@ func newHub() *Hub {
 		Register:   make(chan RegisterReq),
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan protocol.Frame),
-		Query:      make(chan ClientNumReq),
+		Query:      make(chan func(*Hub)),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
@@ -65,10 +66,10 @@ func (h *Hub) run() {
 			h.deliver(f)
 		case f := <-h.Broadcast:
 			h.deliver(f)
-		case req := <-h.Query:
-			// Currenly only handles clientList length requests
-			clientNum := len(h.clientList)
-			req.reply <- clientNum
+		case query := <-h.Query:
+			// Queries run on the hub goroutine, so they may read clientList
+			// directly. They must not retain anything they are handed.
+			query(h)
 		case <-h.Done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
 			for c := range h.clientList {
@@ -95,19 +96,45 @@ func (h *Hub) register(c *Client) error {
 	}
 }
 
+// query runs fn on the hub goroutine and returns its result. ok is false if the
+// hub shut down before the query could run. Methods cannot be generic, so this
+// is a plain function.
+func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
+	ch := make(chan T, 1) // Buffered so run() never blocks if we give up on the reply.
+	req := func(h *Hub) { ch <- fn(h) }
+
+	var zero T
+	select {
+	case h.Query <- req:
+	case <-h.Done:
+		return zero, false
+	}
+	select {
+	case v := <-ch:
+		return v, true
+	case <-h.Done:
+		return zero, false
+	}
+}
+
 func (h *Hub) clientCount() int {
-	ch := make(chan int, 1)
-	select {
-	case h.Query <- ClientNumReq{reply: ch}:
-	case <-h.Done:
-		return 0
-	}
-	select {
-	case n := <-ch:
-		return n
-	case <-h.Done:
-		return 0
-	}
+	n, _ := query(h, func(h *Hub) int {
+		return len(h.clientList)
+	})
+	return n
+}
+
+// clientNames returns a sorted snapshot of the names of every connected client.
+func (h *Hub) clientNames() []string {
+	names, _ := query(h, func(h *Hub) []string {
+		names := make([]string, 0, len(h.clientList))
+		for c := range h.clientList {
+			names = append(names, c.Name)
+		}
+		sort.Strings(names)
+		return names
+	})
+	return names
 }
 
 func (h *Hub) nameInUse(name string) bool {
@@ -130,12 +157,30 @@ func (h *Hub) closeClient(c *Client) {
 	delete(h.clientList, c)
 }
 
+// sendTo queues a frame for a single client. The send happens on the hub
+// goroutine because the hub owns c.Out's lifetime — closeClient closes it, so a
+// send from any other goroutine could race with a close and panic.
+func (h *Hub) sendTo(c *Client, f protocol.Frame) {
+	query(h, func(h *Hub) struct{} {
+		h.deliverTo(c, f)
+		return struct{}{}
+	})
+}
+
+// deliverTo queues one frame for one client. Hub goroutine only.
+func (h *Hub) deliverTo(c *Client, f protocol.Frame) {
+	if _, ok := h.clientList[c]; !ok {
+		return // Already gone; nothing to deliver to.
+	}
+	select {
+	case c.Out <- f:
+	default: // If a c.Out cannot be reached, assume the client has left and close it.
+		h.closeClient(c)
+	}
+}
+
 func (h *Hub) deliver(f protocol.Frame) {
 	for c := range h.clientList {
-		select {
-		case c.Out <- f:
-		default: // If a c.Out cannot be reached, assume the client has left and close it.
-			h.closeClient(c)
-		}
+		h.deliverTo(c, f)
 	}
 }

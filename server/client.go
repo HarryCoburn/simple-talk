@@ -66,7 +66,7 @@ func (c *Client) readClientInput(hub *Hub) {
 
 		switch frame.Kind {
 		case protocol.KindChat:
-			decorated, isCommand, err := decorateChat(frame)
+			decorated, err := decorateChat(c.Name, frame)
 			if err != nil {
 				log.Printf("dropping malformed chat frame: %v", err)
 				continue
@@ -75,6 +75,10 @@ func (c *Client) readClientInput(hub *Hub) {
 			case hub.Broadcast <- decorated:
 			case <-hub.Done:
 				return
+			}
+		case protocol.KindCommand:
+			if err := dispatchCommand(c, hub, frame); err != nil {
+				log.Printf("command from %s failed: %v", c.Name, err)
 			}
 		default:
 			log.Printf("ignoring unsupported frame kind %q from %s", frame.Kind, c.Name)
@@ -90,10 +94,13 @@ func (c *Client) leave(hub *Hub) {
 	}
 }
 
-func decorateChat(f protocol.Frame) (protocol.Frame, bool, error) {
+// decorateChat formats an incoming chat payload for broadcast. The sender is
+// taken from the registered connection, not from the payload, so a client
+// cannot claim to be someone else.
+func decorateChat(sender string, f protocol.Frame) (protocol.Frame, error) {
 	var chat protocol.Chat
 	if err := json.Unmarshal(f.Payload, &chat); err != nil {
-		return protocol.Frame{}, false, fmt.Errorf("decorate chat: %w", err)
+		return protocol.Frame{}, fmt.Errorf("decorate chat: %w", err)
 	}
 
 	format := messageFormat
@@ -103,10 +110,10 @@ func decorateChat(f protocol.Frame) (protocol.Frame, bool, error) {
 		text = chat.Text[1:]
 	}
 
-	frame, err := protocol.NewChatFrame(chat.From, fmt.Sprintf(format, chat.From, text))
+	frame, err := protocol.NewChatFrame(sender, fmt.Sprintf(format, sender, text))
 	if err != nil {
-		return protocol.Frame{}, false, err
+		return protocol.Frame{}, err
 	}
-	return frame, false, nil
+	return frame, nil
 
 }

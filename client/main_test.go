@@ -226,7 +226,10 @@ func TestReceiveLoopSkipsFramesItCannotUse(t *testing.T) {
 	dead := make(chan struct{})
 
 	go func() {
-		pipe.Peer.SendError("something went wrong") // not a chat frame
+		pipe.Peer.SendFrame(protocol.Frame{
+			Kind:    "not_a_kind_we_know", // a kind from a newer server
+			Payload: []byte(`{"text":"something went wrong"}`),
+		})
 		pipe.Peer.SendFrame(protocol.Frame{
 			Kind:    protocol.KindChat,
 			Payload: []byte(`"not a chat object"`), // undecodable payload
@@ -240,7 +243,7 @@ func TestReceiveLoopSkipsFramesItCannotUse(t *testing.T) {
 	})
 
 	if strings.Contains(out, "something went wrong") {
-		t.Errorf("Non-chat frames should not be printed as chat. Output was: %q", out)
+		t.Errorf("Unhandled frame kinds should not be printed. Output was: %q", out)
 	}
 	if !strings.Contains(out, "still here") {
 		t.Errorf("The loop stopped early: later messages never printed. Output was: %q", out)

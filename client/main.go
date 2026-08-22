@@ -64,6 +64,14 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 				continue
 			}
 			fmt.Println(msg.Text)
+		case protocol.KindError:
+			// Post-handshake errors are things like an unknown command, and are
+			// meant for this user alone.
+			var msg protocol.Error
+			if err := json.Unmarshal(f.Payload, &msg); err != nil {
+				continue
+			}
+			fmt.Printf("Error: %s\n", msg.Message)
 		default:
 			log.Print("Client received frame kind it can't process yet.")
 		}
@@ -80,13 +88,47 @@ func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan s
 			return
 		default:
 		}
-		if err := conn.SendChat(name, scan.Text()); err != nil {
+		line := scan.Text()
+		var err error
+		if cmd, args, ok := parseInput(line); ok {
+			err = conn.SendCommand(cmd, args)
+		} else {
+			err = conn.SendChat(name, unescapeInput(line))
+		}
+		if err != nil {
 			fmt.Printf("Send failed: %v\n", err)
 			return
 		}
 	}
 	conn.Close()
 	<-dead
+}
+
+// parseInput decides whether a typed line is a slash command. It reports the
+// bare command name (lowercased, no slash) and its whitespace-separated
+// arguments. A line starting with "//" is an escaped literal slash, not a
+// command, and a bare "/" is not a command either.
+//
+// It is deliberately a pure function so the BubbleTea client can call it from
+// Update and intercept client-local commands before any frame is built.
+func parseInput(line string) (name string, args []string, ok bool) {
+	if !strings.HasPrefix(line, "/") || strings.HasPrefix(line, "//") {
+		return "", nil, false
+	}
+
+	fields := strings.Fields(line[1:])
+	if len(fields) == 0 {
+		return "", nil, false // A lone "/" or "/   ".
+	}
+	return strings.ToLower(fields[0]), fields[1:], true
+}
+
+// unescapeInput turns a leading "//" back into the literal "/" the user meant.
+func unescapeInput(line string) string {
+	if strings.HasPrefix(line, "//") {
+		return line[1:]
+	}
+	return line
 }
 
 // setUserName doubles as a handshake function for the server. Currently, it only verifies

@@ -11,11 +11,6 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
-// A struct for requesting the number of clients connected
-type ClientNumReq struct {
-	reply chan int
-}
-
 type RegisterReq struct {
 	client *Client
 	reply  chan error

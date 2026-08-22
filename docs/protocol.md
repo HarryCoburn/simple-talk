@@ -6,6 +6,21 @@ Protocol is the frame library for SimpleText and its associated connection.
 - frames.go contains constructor methods for the various frames. New frame kinds should have a new builder method created.
 - conn.go holds the connector and its associated functions, along with some constants for special errors, frame sizes, and timeouts.
 
+## Kinds
+
+| Kind | Payload | Direction | Notes |
+| --- | --- | --- | --- |
+| `handshake` | Handshake{Name} | client to server | Opens the connection. |
+| `handshake_ack` | HandshakeAck{Name} | server to client | Carries the cleaned name. |
+| `chat` | Chat{From, Text} | both | The server takes the sender from the registered connection and ignores the From the client sends. |
+| `command` | Command{Name, Args} | client to server | A slash command. Name is the bare command word, lowercased and without the leading slash. |
+| `system` | System{Text} | server to client | Announcements and command output. |
+| `error` | Error{Message} | server to client | Rejected name, bad frame, unknown command. |
+
+Commands have no dedicated reply kind: results come back as `system`, failures as `error`. Give commands their own result kind only if a client needs to lay the result out structurally.
+
+A client should skip kinds it does not recognize rather than failing, so a newer server can add kinds without breaking older clients.
+
 ## protocol.Conn
 
 A Conn holds a connection, a reader, a mutex, and a json encoder.

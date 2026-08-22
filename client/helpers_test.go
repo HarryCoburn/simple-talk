@@ -100,6 +100,19 @@ func chatFrom(t *testing.T, f protocol.Frame) (string, string) {
 	return chat.From, chat.Text
 }
 
+// commandFrom unpacks a KindCommand frame, returning its Name and Args.
+func commandFrom(t *testing.T, f protocol.Frame) (string, []string) {
+	t.Helper()
+	if f.Kind != protocol.KindCommand {
+		t.Fatalf("Wanted a %q frame, got %q", protocol.KindCommand, f.Kind)
+	}
+	var cmd protocol.Command
+	if err := json.Unmarshal(f.Payload, &cmd); err != nil {
+		t.Fatalf("Could not unpack the command payload: %v", err)
+	}
+	return cmd.Name, cmd.Args
+}
+
 // waitClosed fails tests if c is not closed within a short grace period.
 // Keeps a broken goroutine from hanging the whole suite.
 func waitClosed(t *testing.T, c <-chan struct{}, what string) {

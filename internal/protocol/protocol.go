@@ -12,6 +12,7 @@ const (
 	KindChat         Kind = "chat"
 	KindError        Kind = "error"
 	KindSystem       Kind = "system"
+	KindCommand      Kind = "command"
 )
 
 type Frame struct {
@@ -38,4 +39,11 @@ type Error struct {
 
 type System struct {
 	Text string `json:"text"`
+}
+
+// A command the client asks the server to run, e.g. /who. The client strips the
+// leading slash, so Name is the bare command word.
+type Command struct {
+	Name string   `json:"name"`
+	Args []string `json:"args,omitempty"`
 }

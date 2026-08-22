@@ -37,6 +37,14 @@ func NewErrorFrame(message string) (Frame, error) {
 	return newFrame(KindError, Error{Message: message})
 }
 
+// Build a command frame.
+func NewCommandFrame(name string, args []string) (Frame, error) {
+	return newFrame(KindCommand, Command{
+		Name: name,
+		Args: args,
+	})
+}
+
 // Build a handshake frame
 func NewHandshakeFrame(name string) (Frame, error) {
 	return newFrame(KindHandshake, Handshake{Name: name})
