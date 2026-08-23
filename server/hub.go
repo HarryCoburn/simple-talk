@@ -21,7 +21,7 @@ type Hub struct {
 	register   chan RegisterReq     // Register a new client
 	unregister chan *Client         // Unregister a client
 	broadcast  chan protocol.Frame  // Send a frame to all clients
-	query      chan func(*Hub)      // Run a read-only query inside Hub.run()
+	tasks      chan func(*Hub)      // Run a closure inside Hub.run without disrupting serialization
 	done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	finished   chan struct{}        // Signal the hub is completely closed.
 	stopOnce   sync.Once            // Guards against a second close
@@ -34,7 +34,7 @@ func newHub() *Hub {
 		register:   make(chan RegisterReq),
 		unregister: make(chan *Client),
 		broadcast:  make(chan protocol.Frame),
-		query:      make(chan func(*Hub)),
+		tasks:      make(chan func(*Hub)),
 		done:       make(chan struct{}),
 		finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
@@ -68,8 +68,8 @@ func (h *Hub) run() {
 			h.deliver(f)
 		case f := <-h.broadcast:
 			h.deliver(f)
-		case query := <-h.query:
-			query(h)
+		case task := <-h.tasks:
+			task(h)
 		case <-h.done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
 			for c := range h.clientList {
@@ -131,13 +131,15 @@ func (h *Hub) Broadcast(f protocol.Frame) error {
 
 // Internal hub processes
 
-func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
+// submit runs fn on hub and returns the result. The boolis false if the hub is shut down before fn
+// runs. Call query and exec to use it.
+func submit[T any](h *Hub, fn func(*Hub) T) (T, bool) {
 	ch := make(chan T, 1)
-	req := func(h *Hub) { ch <- fn(h) }
+	task := func(h *Hub) { ch <- fn(h) }
 
 	var zero T
 	select {
-	case h.query <- req:
+	case h.tasks <- task:
 	case <-h.done:
 		return zero, false
 	}
@@ -147,6 +149,20 @@ func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
 	case <-h.done:
 		return zero, false
 	}
+}
+
+// query runs functions on hub that do not mutate hub.
+func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
+	return submit(h, fn)
+}
+
+// exec mutates the hub state from another goroutine
+func exec(h *Hub, fn func(*Hub)) bool {
+	_, ok := submit(h, func(h *Hub) struct{} {
+		fn(h)
+		return struct{}{}
+	})
+	return ok
 }
 
 func (h *Hub) clientNames() []string {
@@ -181,11 +197,11 @@ func (h *Hub) closeClient(c *Client) {
 	delete(h.clientList, c)
 }
 
-// sendTo queues a frame for a single client.
+// sendTo queues a frame for a single client. Because deliverTo can drop a client whose
+// Out is not responding, it uses exec
 func (h *Hub) sendTo(c *Client, f protocol.Frame) {
-	query(h, func(h *Hub) struct{} {
+	exec(h, func(h *Hub) {
 		h.deliverTo(c, f)
-		return struct{}{}
 	})
 }
 
