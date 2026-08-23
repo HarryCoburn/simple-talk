@@ -102,13 +102,10 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ---
 
-<<<<<<< HEAD
-=======
 ## Appendix — scale cliffs
 
 Hypothetical 2,000-user target. Recorded so the cliffs are known, not as scheduled work. Ordered by
 which wall you hit first.
->>>>>>> 650e683d71e05c6db0af7c028c0e8d3e87b14541
 
 1. Every frame is JSON-marshalled once *per recipient* — `deliverTo` queues the `Frame` struct and
    each client's `processClientOutQueue` calls `SendFrame` → `enc.Encode`. Marshalling once into
@@ -128,14 +125,7 @@ which wall you hit first.
 8. Memory: 2,000 clients × a 256-frame buffer is a worst case in the hundreds of MB, reached
    precisely when things are already going wrong.
 
-<<<<<<< HEAD
-The hub owns transport concerns it shouldn't. closeClient closes c.Out and c.Conn. The hub therefore knows about sockets, which is what makes it untestable without net.Pipe and what will make a second transport (WebSocket, TLS) invasive.
-No context.Context anywhere. The Done/Finished pair is a correct hand-rolled equivalent, but context composes with timeouts, cancellation, and every library you'll add later. For a learning project, hand-rolling it once was worth doing; converting is a natural next exercise.
-
-4. Where it breaks down as features are added
-=======
 ## Architecture note
->>>>>>> 650e683d71e05c6db0af7c028c0e8d3e87b14541
 
 The shape is right: a single hub goroutine owning all shared state reached only by channels, with two
 goroutines per client. It buys freedom from mutexes over the client set and the check-and-insert

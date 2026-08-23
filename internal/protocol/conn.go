@@ -20,7 +20,7 @@ const (
 var (
 	ErrBadFrame      = errors.New("protocol: received a bad frame")
 	ErrFrameTooLarge = errors.New("protocol: frame exceeds maximum size")
-	ErrUnrecoverable = errors.New("protocol: stream desynchronized, connection unusuable")
+	ErrUnrecoverable = errors.New("protocol: stream desynchronized, connection unusable")
 )
 
 // Conn is the connection structure for the chat protocol
