@@ -1,9 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net"
+	"os"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,4 +156,33 @@ func joinRoom(t *testing.T, hub *Hub, name string) *Client {
 	c := &Client{Name: name, Out: make(chan protocol.Frame, 8)}
 	mustRegister(t, hub, c)
 	return c
+}
+
+// lockedBuffer collects log output written from another goroutine.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// captureLog points the standard logger at a buffer for the duration of one
+// test. A recovered panic is reported through log, so this is how a test reads
+// it, and it keeps the stack trace out of the test output.
+func captureLog(t *testing.T) *lockedBuffer {
+	t.Helper()
+	buf := &lockedBuffer{}
+	log.SetOutput(buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	return buf
 }

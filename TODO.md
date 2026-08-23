@@ -70,8 +70,11 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
       `query`, `exec` or `clientList`. Its three methods still round-trip through the hub goroutine,
       which no interface can express, so the invariant that handlers run on the caller's read
       goroutine is written down on the interface, on `dispatchCommand`, and on `run`'s `tasks` arm.
-- [ ] `recover()` per client goroutine. One panic anywhere in a client's read path currently takes
-      down every other user's session.
+- [X] `recover()` per client goroutine. `Client.guard` (`server/client.go:40`) is deferred at the
+      top of both of a client's goroutines: a panic drops that one client and is logged with its
+      stack, instead of unwinding past main. The hub goroutine is still unguarded — a panic in
+      `Hub.run` remains fatal, and closing that gap needs its own decision about what a half torn
+      down hub should do.
 - [X] Move `RegisterReq` (`server/main.go:18`) into `hub.go` and unexport it — it is hub internals.
 - [ ] Fold `announceConnection` / `announceDisconnection` (`server/main.go:155,164`) into one helper;
       they differ only in a verb.
