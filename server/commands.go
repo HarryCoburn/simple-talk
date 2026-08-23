@@ -23,9 +23,7 @@ type cmdCtx struct {
 type cmdHandler func(ctx cmdCtx) error
 
 // The command table. Names are lowercase and carry no leading slash — the
-// client strips that before building the frame. Populated in init() rather than
-// as a literal because cmdHelp reads the table, which would be an
-// initialization cycle.
+// client strips that before building the frame.
 var commands = map[string]cmdHandler{
 	"who":  cmdWho,
 	"help": cmdHelp,

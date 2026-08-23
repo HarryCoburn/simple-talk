@@ -177,7 +177,6 @@ func TestCmdHelpListsTheCommandTable(t *testing.T) {
 	}
 }
 
-
 // Command names are matched after trimming and lowercasing, so the user's
 // spacing and capitalization do not decide whether a command is found.
 func TestDispatchNormalizesTheCommandName(t *testing.T) {
