@@ -71,7 +71,12 @@ func (c *Client) readClientInput(hub *Hub) {
 				log.Printf("dropping malformed chat frame: %v", err)
 				continue
 			}
-			err = hub.Broadcast(decorated)
+			if err := hub.Broadcast(decorated); err != nil {
+				if errors.Is(err, ErrHubClosed) {
+					return
+				}
+				log.Printf("broadcast from %s failed: %v", c.Name, err)
+			}
 		case protocol.KindCommand:
 			if err := dispatchCommand(c, hub, frame); err != nil {
 				log.Printf("command from %s failed: %v", c.Name, err)
@@ -79,9 +84,6 @@ func (c *Client) readClientInput(hub *Hub) {
 		default:
 			log.Printf("ignoring unsupported frame kind %q from %s", frame.Kind, c.Name)
 
-		}
-		if err == ErrHubClosed {
-			break
 		}
 	}
 }
