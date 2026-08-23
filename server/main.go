@@ -113,7 +113,11 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		newClient.leave(hub)
 		return
 	}
-	hub.Broadcast(f)
+	if err := hub.Broadcast(f); err != nil {
+		log.Printf("could not announce %s: %v", newClient.Name, err)
+		newClient.leave(hub)
+		return
+	}
 
 	go newClient.processClientOutQueue(hub)
 	go newClient.readClientInput(hub)
