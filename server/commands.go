@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
@@ -24,13 +23,14 @@ type cmdHandler func(ctx cmdCtx) error
 // client strips that before building the frame. Populated in init() rather than
 // as a literal because cmdHelp reads the table, which would be an
 // initialization cycle.
-var commands map[string]cmdHandler
+var commands = map[string]cmdHandler{
+	"who":  cmdWho,
+	"help": cmdHelp,
+}
 
-func init() {
-	commands = map[string]cmdHandler{
-		"who":  cmdWho,
-		"help": cmdHelp,
-	}
+var commandNames = []string{
+	"help",
+	"who",
 }
 
 // reply sends a system message to the caller alone.
@@ -87,10 +87,6 @@ func cmdWho(ctx cmdCtx) error {
 
 // cmdHelp lists the available commands.
 func cmdHelp(ctx cmdCtx) error {
-	names := make([]string, 0, len(commands))
-	for name := range commands {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return ctx.reply("Commands: %s", strings.Join(names, ", "))
+
+	return ctx.reply("Commands: %s", strings.Join(commandNames, ", "))
 }

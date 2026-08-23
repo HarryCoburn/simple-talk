@@ -22,10 +22,7 @@ Watch for %v where %w is meant
 
 Watch for exporting identifiers that don't need to be exported
 
-
-init() for the command table (server/commands.go:28). The comment explains the real initialisation cycle, so this is defensible — but it's avoidable by having cmdHelp take names from a separate slice, and init() is worth avoiding on principle.
-
-Missing: no CI, no golangci-lint config, no Makefile. For a project this size a single workflow running go vet ./... && go test -race ./... would have caught the server build break before it reached a branch.
+Missing: no CI, no golangci-lint config, no Makefile. -- Hold until BubbleTea is done and we are ready to push completed builds to my VPS.
 
 2. Code smells and defects
 Actual bugs
