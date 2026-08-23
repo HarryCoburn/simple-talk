@@ -72,10 +72,10 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
       goroutine is written down on the interface, on `dispatchCommand`, and on `run`'s `tasks` arm.
 - [ ] `recover()` per client goroutine. One panic anywhere in a client's read path currently takes
       down every other user's session.
-- [ ] Move `RegisterReq` (`server/main.go:18`) into `hub.go` and unexport it — it is hub internals.
+- [X] Move `RegisterReq` (`server/main.go:18`) into `hub.go` and unexport it — it is hub internals.
 - [ ] Fold `announceConnection` / `announceDisconnection` (`server/main.go:155,164`) into one helper;
       they differ only in a verb.
-- [ ] Document the `MaxFrameSize` off-by-one. `bufio.NewReaderSize(c, MaxFrameSize)`
+- [X] Document the `MaxFrameSize` off-by-one. `bufio.NewReaderSize(c, MaxFrameSize)`
       (`internal/protocol/conn.go:15,37`) must hold the delimiter too, so the largest accepted line
       is 8191 bytes, not the documented 8192.
 - [ ] Note `/who` costs two hub round-trips (`clientNames`, then `reply`).
