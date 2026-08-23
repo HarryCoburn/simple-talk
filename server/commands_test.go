@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -317,7 +318,8 @@ func TestCommandsDoNotBlockOnAStoppedHub(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil {
+		// Report a stopped hub
+		if !errors.Is(err, ErrHubClosed) {
 			t.Errorf("/who on a stopped hub returned %v, wanted no error", err)
 		}
 	case <-time.After(2 * time.Second):

@@ -165,8 +165,8 @@ func exec(h *Hub, fn func(*Hub)) bool {
 	return ok
 }
 
-func (h *Hub) clientNames() []string {
-	names, _ := query(h, func(h *Hub) []string {
+func (h *Hub) clientNames() ([]string, error) {
+	names, ok := query(h, func(h *Hub) []string {
 		names := make([]string, 0, len(h.clientList))
 		for c := range h.clientList {
 			names = append(names, c.Name)
@@ -174,7 +174,10 @@ func (h *Hub) clientNames() []string {
 		slices.Sort(names)
 		return names
 	})
-	return names
+	if !ok {
+		return nil, ErrHubClosed
+	}
+	return names, nil
 }
 
 func (h *Hub) nameInUse(name string) bool {
@@ -199,10 +202,13 @@ func (h *Hub) closeClient(c *Client) {
 
 // sendTo queues a frame for a single client. Because deliverTo can drop a client whose
 // Out is not responding, it uses exec
-func (h *Hub) sendTo(c *Client, f protocol.Frame) {
-	exec(h, func(h *Hub) {
+func (h *Hub) sendTo(c *Client, f protocol.Frame) error {
+	if !exec(h, func(h *Hub) {
 		h.deliverTo(c, f)
-	})
+	}) {
+		return ErrHubClosed
+	}
+	return nil
 }
 
 // deliverTo queues one frame for one client in the hub goroutine.

@@ -39,8 +39,7 @@ func (ctx cmdCtx) reply(format string, a ...any) error {
 	if err != nil {
 		return err
 	}
-	ctx.hub.sendTo(ctx.client, f)
-	return nil
+	return ctx.hub.sendTo(ctx.client, f)
 }
 
 // replyError sends an error frame to the caller alone.
@@ -49,8 +48,7 @@ func (ctx cmdCtx) replyError(format string, a ...any) error {
 	if err != nil {
 		return err
 	}
-	ctx.hub.sendTo(ctx.client, f)
-	return nil
+	return ctx.hub.sendTo(ctx.client, f)
 }
 
 // dispatchCommand decodes a command frame and runs the matching handler.
@@ -77,9 +75,13 @@ func dispatchCommand(c *Client, hub *Hub, f protocol.Frame) error {
 
 // cmdWho lists everyone currently connected.
 func cmdWho(ctx cmdCtx) error {
-	names := ctx.hub.clientNames()
+	names, err := ctx.hub.clientNames()
+	if err != nil {
+		return err
+	}
 	if len(names) == 0 {
-		// The caller is registered, so this only happens on a shutting-down hub.
+		// The caller is registered, so an empty roster means they were dropped between
+		// issuing the command and the hub reading the list
 		return ctx.reply("Nobody is connected.")
 	}
 	return ctx.reply("Connected (%d): %s", len(names), strings.Join(names, ", "))

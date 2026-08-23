@@ -28,11 +28,6 @@ Missing: no CI, no golangci-lint config, no Makefile. -- Hold until BubbleTea is
 
 
 Smells
-The Hub's public API is its raw channels. Some callers go through methods (hub.register, c.leave), others send directly (hub.Broadcast <- f at server/main.go:95, chatHub.Unregister <- c throughout the tests). Every direct sender has to remember the select-on-Done dance or risk parking forever — that exact bug is what TestHandleNewConnExitsWhenHubStopsMidHandshake was written for. One inconsistent caller reintroduces it.
-
-Hub.Query is not a query channel. sendTo (server/hub.go:148) pushes a closure that calls deliverTo, which can call closeClient — a mutation. The name says read-only; the type (chan func(*Hub)) permits anything. Either rename it or split reads from writes.
-
-query[T]'s ok result is discarded at both call sites (clientNames, sendTo). A stopped hub silently yields the zero value, so "nobody is connected" and "hub is gone" are indistinguishable. This is why cmdWho's "Nobody is connected." branch is unreachable — as noted when testing it.
 
 The server trusts client-side validation. cleanUserName lives only in client/main.go:180. verifyName (server/main.go:104) unmarshals hs.Name and returns it with no trimming, no length cap, no charset check, no empty check. A hand-written client can register as "", as 8KB of text, or as a name with control characters that corrupt other users' terminals. Uniqueness is also exact-match and case-sensitive, so Harry and harry coexist.
 

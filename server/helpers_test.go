@@ -95,7 +95,10 @@ func setUpTest(t *testing.T) testHelper {
 // and it reports names rather than a bare count so a failure says who is there.
 func wantRoster(t *testing.T, h *Hub, want ...string) {
 	t.Helper()
-	got := h.clientNames()
+	got, err := h.clientNames()
+	if err != nil {
+		t.Fatalf("Could not read the roster: %v", err)
+	}
 	if len(want) == 0 && len(got) == 0 {
 		return
 	}
