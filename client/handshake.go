@@ -43,7 +43,7 @@ func sendHandshake(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, er
 			return "", nil
 		}
 		// Catch for any other kind of error
-		return "", errors.New("Username Failure.")
+		return "", errors.New("username failure.")
 	}
 }
 
@@ -52,8 +52,7 @@ func recvHandshake(conn *protocol.Conn) (string, error) {
 	// Check the response
 	resp, err := conn.Recv()
 	if err != nil {
-		fmt.Printf("Receive error while setting username: %v", err)
-		return "", err
+		return "", fmt.Errorf("receive error while setting username: %v", err)
 	}
 	// Check the kind of response for an error
 	if resp.Kind == protocol.KindError {
@@ -64,7 +63,7 @@ func recvHandshake(conn *protocol.Conn) (string, error) {
 		return "", errors.New(serverErr.Message)
 	}
 	if resp.Kind != protocol.KindHandshakeAck {
-		return "", errors.New("Didn't receive handshake ack or error from server")
+		return "", errors.New("didn't receive handshake ack or error from server")
 
 	}
 	// We look good, unpack the handshakeack frame and unpack it for client.
@@ -82,7 +81,7 @@ func cleanUserName(name string) (string, error) {
 	// TODO, consider more validation rules. Pass for now with assumptions for MVP.
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("Username cannot be blank.")
+		return "", errors.New("username cannot be blank.")
 	}
 	return name, nil
 }

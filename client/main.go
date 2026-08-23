@@ -20,7 +20,7 @@ const userNamePrompt = "Please state your username: "
 func main() {
 	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
 	if err != nil {
-		log.Fatal("Client could not dial to the server.")
+		log.Fatal("client could not dial to the server.")
 	}
 	conn := protocol.NewConn(bareConn)
 	defer conn.Close() // This will also close bareConn
@@ -30,7 +30,7 @@ func main() {
 	// Handshake
 	name, err := sendHandshake(conn, stdin)
 	if err != nil {
-		log.Printf("Problem with setting username: %v", err)
+		log.Printf("problem with setting username: %v", err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 			}
 			fmt.Printf("Error: %s\n", msg.Message)
 		default:
-			log.Print("Client received frame kind it can't process yet.")
+			log.Print("client received frame kind it can't process yet.")
 		}
 	}
 
