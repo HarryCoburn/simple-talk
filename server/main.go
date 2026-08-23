@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
+	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
 type RegisterReq struct {
@@ -142,7 +143,13 @@ func verifyName(fullc *protocol.Conn) (string, error) {
 		return "", fmt.Errorf("something wrong with the name payload: %v", err)
 	}
 
-	return hs.Name, nil
+	// The client validates too, for a faster prompt, but a hand-written client
+	// is under no obligation to. This is where the rule is enforced.
+	name, err := validate.Name(hs.Name)
+	if err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 func announceConnection(name string) (protocol.Frame, error) {

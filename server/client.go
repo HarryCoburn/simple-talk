@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
+	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
 // An individual client connection.
@@ -66,6 +67,14 @@ func (c *Client) readClientInput(hub *Hub) {
 
 		switch frame.Kind {
 		case protocol.KindChat:
+			if err := c.checkChat(frame); err != nil {
+				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
+					log.Printf("could not report a rejected message to %s: %v", c.Name, sendErr)
+					c.leave(hub)
+					return
+				}
+				continue
+			}
 			decorated, err := decorateChat(c.Name, frame)
 			if err != nil {
 				log.Printf("dropping malformed chat frame: %v", err)
@@ -90,6 +99,18 @@ func (c *Client) readClientInput(hub *Hub) {
 
 func (c *Client) leave(hub *Hub) {
 	hub.Unregister(c)
+}
+
+// checkChat applies the message rules to an incoming chat frame. A malformed
+// payload is reported the same way as a disallowed one: the sender hears about
+// it and the room never sees it.
+func (c *Client) checkChat(f protocol.Frame) error {
+	var chat protocol.Chat
+	if err := json.Unmarshal(f.Payload, &chat); err != nil {
+		return validate.ErrMessageNotAllowed
+	}
+	_, err := validate.Message(chat.Text)
+	return err
 }
 
 func decorateChat(sender string, f protocol.Frame) (protocol.Frame, error) {

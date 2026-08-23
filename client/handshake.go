@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
+	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
 // sendHandshake sends handshake information to the server. Currently, it only verifies
@@ -79,9 +79,5 @@ func recvHandshake(conn *protocol.Conn) (string, error) {
 // sending it to the server for further verification.
 func cleanUserName(name string) (string, error) {
 	// TODO, consider more validation rules. Pass for now with assumptions for MVP.
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", errors.New("username cannot be blank.")
-	}
-	return name, nil
+	return validate.Name(name)
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
+	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
 var (
@@ -181,8 +182,16 @@ func (h *Hub) clientNames() ([]string, error) {
 }
 
 func (h *Hub) nameInUse(name string) bool {
+	key, err := validate.NameKey(name)
+	if err != nil {
+		return true
+	}
 	for c := range h.clientList {
-		if c.Name == name {
+		ck, err := validate.NameKey(c.Name)
+		if err != nil {
+			continue // Registered names were validated, so this should not happen.
+		}
+		if ck == key {
 			return true
 		}
 	}

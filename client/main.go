@@ -86,6 +86,9 @@ func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan s
 		}
 		line := scan.Text()
 		var err error
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
 		if cmd, args, ok := parseInput(line); ok {
 			err = conn.SendCommand(cmd, args)
 		} else {

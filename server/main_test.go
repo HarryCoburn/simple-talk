@@ -7,12 +7,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
+	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
 func TestRegisterClient(t *testing.T) {
@@ -654,5 +656,105 @@ func TestServeShutsDownWhenTheListenerDies(t *testing.T) {
 	case <-returned:
 	case <-time.After(2 * time.Second):
 		t.Fatal("serve did not return after the listener closed.")
+	}
+}
+
+// TestDecoratedFrameFitsAFrame guards the budget behind validate.MaxMessageRunes.
+// The server decorates a chat frame before fanning it out, and decoration only
+// grows it: the sender's name, the format, and JSON escaping all add bytes. If a
+// legal message could decorate into an oversized frame, every recipient would
+// discard it as ErrFrameTooLarge. "<" is the worst case per rune, since the JSON
+// encoder escapes it to <.
+func TestDecoratedFrameFitsAFrame(t *testing.T) {
+	name := strings.Repeat("<", validate.MaxNameRunes)
+	text := strings.Repeat("<", validate.MaxMessageRunes)
+
+	f, err := protocol.NewChatFrame(name, text)
+	if err != nil {
+		t.Fatalf("Could not build the worst-case chat frame: %v", err)
+	}
+	decorated, err := decorateChat(name, f)
+	if err != nil {
+		t.Fatalf("Could not decorate the worst-case chat frame: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(decorated); err != nil {
+		t.Fatalf("Could not encode the decorated frame: %v", err)
+	}
+	if buf.Len() > protocol.MaxFrameSize {
+		t.Errorf("The worst-case decorated frame is %d bytes, over the %d limit. Lower validate.MaxMessageRunes.",
+			buf.Len(), protocol.MaxFrameSize)
+	}
+	t.Logf("worst case decorated frame: %d of %d bytes", buf.Len(), protocol.MaxFrameSize)
+}
+
+// The server is the authority on names: a hand-written client that skips the
+// prompt's rules is rejected at the handshake.
+func TestVerifyNameRejectsBadNames(t *testing.T) {
+	cases := []struct {
+		desc string
+		name string
+	}{
+		{"blank", ""},
+		{"only spaces", "   "},
+		{"a newline, which would forge chat lines", "Alice\n<Bob> hi"},
+		{"an ANSI escape, which writes to other terminals", "Ali\x1b[31mce"},
+		{"a zero width rune, which hides a duplicate", "Ali​ce"},
+		{"far too long", strings.Repeat("a", validate.MaxNameRunes+1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			in, out := net.Pipe()
+			t.Cleanup(func() { in.Close(); out.Close() })
+			server := protocol.NewConn(in)
+			peer := protocol.NewConn(out)
+
+			go func() { peer.SendHandshake(tc.name) }()
+
+			got, err := verifyName(server)
+			if err == nil {
+				t.Fatalf("verifyName accepted %q as %q, wanted a rejection", tc.name, got)
+			}
+		})
+	}
+}
+
+// A name that only differs by case is the same person, so the second one is
+// turned away rather than quietly shadowing the first.
+func TestRegisterRejectsANameTakenInAnotherCase(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+	joinRoom(t, chatHub, "Harry")
+
+	second := &Client{Name: "harry", Out: make(chan protocol.Frame, 8)}
+	if err := chatHub.Register(second); !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("Registering %q against %q returned %v, wanted %v", "harry", "Harry", err, ErrNameTaken)
+	}
+}
+
+// A message carrying an escape sequence never reaches the room: the sender is
+// told, and nobody else sees a frame.
+func TestReadClientInputRejectsADisallowedMessage(t *testing.T) {
+	testHelp := setUpTest(t)
+	testHelp.Client.Name = "Alice"
+	chatHub, _ := newTestHub(t)
+	mustRegister(t, chatHub, testHelp.Client)
+	go testHelp.Client.readClientInput(chatHub)
+
+	if err := testHelp.Peer.SendChat("Alice", "clear\x1b[2J"); err != nil {
+		t.Fatalf("Could not send the chat: %v", err)
+	}
+
+	f, err := testHelp.Peer.Recv()
+	if err != nil {
+		t.Fatalf("Expected an error frame back, got: %v", err)
+	}
+	if f.Kind != protocol.KindError {
+		t.Fatalf("Wanted a %q frame back, got %q", protocol.KindError, f.Kind)
+	}
+	select {
+	case got := <-testHelp.Client.Out:
+		t.Errorf("The room received %v, wanted nothing", got)
+	default:
 	}
 }
