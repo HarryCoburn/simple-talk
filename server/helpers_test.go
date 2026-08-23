@@ -5,6 +5,7 @@ import (
 	"net"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -106,4 +107,49 @@ func wantRoster(t *testing.T, h *Hub, want ...string) {
 	if !slices.Equal(got, want) {
 		t.Errorf("The hub holds %v, wanted %v", got, want)
 	}
+}
+
+// nextReply takes the one frame a command queued for its caller. Replies are
+// delivered through the hub, so the caller has to be registered to receive one.
+func nextReply(t *testing.T, c *Client) protocol.Frame {
+	t.Helper()
+	select {
+	case f := <-c.Out:
+		return f
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s never received a reply", c.Name)
+		return protocol.Frame{}
+	}
+}
+
+// wantNoReply checks that nothing was queued for a client.
+func wantNoReply(t *testing.T, c *Client) {
+	t.Helper()
+	select {
+	case f := <-c.Out:
+		t.Errorf("%s received an unexpected %q frame: %s", c.Name, f.Kind, f.Payload)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// errorText unpacks a frame expected to be an error, returning its message.
+func errorText(t *testing.T, f protocol.Frame) string {
+	t.Helper()
+	if f.Kind != protocol.KindError {
+		t.Fatalf("Wanted a %q frame, got %q", protocol.KindError, f.Kind)
+	}
+	var e protocol.Error
+	if err := json.Unmarshal(f.Payload, &e); err != nil {
+		t.Fatalf("Could not unpack the error payload: %v", err)
+	}
+	return e.Message
+}
+
+// joinRoom registers a client under the given name and returns it. The Out
+// buffer is roomy so a queued reply never trips the drop-a-stalled-client path.
+func joinRoom(t *testing.T, hub *Hub, name string) *Client {
+	t.Helper()
+	c := &Client{Name: name, Out: make(chan protocol.Frame, 8)}
+	mustRegister(t, hub, c)
+	return c
 }
