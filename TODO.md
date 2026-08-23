@@ -20,10 +20,8 @@ Error strings are capitalised and punctuated — against Go Code Review Comments
 
 Watch for %v where %w is meant
 
+Watch for exporting identifiers that don't need to be exported
 
-Exported identifiers in package main are noise. Client.Conn/.Name/.Out and every Hub channel are exported where export means nothing. This matters because it hides the real question of what the Hub's public API should be (see §3).
-
-sort.Strings (server/commands.go:87) alongside slices.Sort (server/hub.go:122). Pick one; slices.Sort is current.
 
 init() for the command table (server/commands.go:28). The comment explains the real initialisation cycle, so this is defensible — but it's avoidable by having cmdHelp take names from a separate slice, and init() is worth avoiding on principle.
 

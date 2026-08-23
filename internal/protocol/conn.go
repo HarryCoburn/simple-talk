@@ -50,7 +50,7 @@ func (c *Conn) SendFrame(f Frame) error {
 }
 
 func (c *Conn) SendHandshake(name string) error {
-	f, err := NewHandshakeFrame(name)
+	f, err := newHandshakeFrame(name)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (c *Conn) SendHandshake(name string) error {
 }
 
 func (c *Conn) SendHandshakeAck(name string) error {
-	f, err := NewHandshakeAckFrame(name)
+	f, err := newHandshakeAckFrame(name)
 	if err != nil {
 		return err
 	}

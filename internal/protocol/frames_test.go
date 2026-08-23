@@ -34,13 +34,13 @@ func TestBuildersSetKindAndPayload(t *testing.T) {
 		},
 		{
 			name:        "handshake",
-			build:       func() (Frame, error) { return NewHandshakeFrame("alice") },
+			build:       func() (Frame, error) { return newHandshakeFrame("alice") },
 			wantKind:    KindHandshake,
 			wantPayload: `{"name":"alice"}`,
 		},
 		{
 			name:        "handshake ack",
-			build:       func() (Frame, error) { return NewHandshakeAckFrame("alice_2") },
+			build:       func() (Frame, error) { return newHandshakeAckFrame("alice_2") },
 			wantKind:    KindHandshakeAck,
 			wantPayload: `{"name":"alice_2"}`,
 		},

@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
@@ -91,6 +91,6 @@ func cmdHelp(ctx cmdCtx) error {
 	for name := range commands {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return ctx.reply("Commands: %s", strings.Join(names, ", "))
 }

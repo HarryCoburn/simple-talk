@@ -38,12 +38,12 @@ func NewErrorFrame(message string) (Frame, error) {
 }
 
 // Build a handshake frame
-func NewHandshakeFrame(name string) (Frame, error) {
+func newHandshakeFrame(name string) (Frame, error) {
 	return newFrame(KindHandshake, Handshake{Name: name})
 }
 
 // Build a handshake ack frame
-func NewHandshakeAckFrame(name string) (Frame, error) {
+func newHandshakeAckFrame(name string) (Frame, error) {
 	return newFrame(KindHandshakeAck, HandshakeAck{Name: name})
 }
 
