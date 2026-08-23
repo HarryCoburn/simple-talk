@@ -65,11 +65,11 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P2 — before the next big feature
 
-- [ ] Give command handlers a narrow interface (reply / broadcast / roster) instead of `*Hub`.
-      `cmdCtx.hub` (`server/commands.go:14`) is the real hub, so any handler can call `query` — which
-      self-deadlocks if a handler is ever invoked from inside the hub goroutine. It works today only
-      because handlers run on the client's read goroutine, and nothing in the code says so. A narrow
-      interface makes the hazard unrepresentable; until then, write the invariant down.
+- [X] Give command handlers a narrow interface (reply / broadcast / roster) instead of `*Hub`.
+      `cmdCtx.hub` is now `commandHub` (`server/commands.go:13`), so a handler can no longer reach
+      `query`, `exec` or `clientList`. Its three methods still round-trip through the hub goroutine,
+      which no interface can express, so the invariant that handlers run on the caller's read
+      goroutine is written down on the interface, on `dispatchCommand`, and on `run`'s `tasks` arm.
 - [ ] `recover()` per client goroutine. One panic anywhere in a client's read path currently takes
       down every other user's session.
 - [ ] Move `RegisterReq` (`server/main.go:18`) into `hub.go` and unexport it — it is hub internals.

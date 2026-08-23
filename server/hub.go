@@ -89,6 +89,10 @@ func (h *Hub) run() {
 		case f := <-h.broadcast:
 			h.deliver(f)
 		case task := <-h.tasks:
+			// This closure runs inside the hub goroutine, so it must not call
+			// back into the hub: every such call waits on this loop. It is why
+			// command handlers are kept out of here and run on the caller's
+			// goroutine instead.
 			task(h)
 		case <-h.done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
