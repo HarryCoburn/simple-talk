@@ -59,7 +59,7 @@ func TestSetUserNameReturnsTheAckedName(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf(" alice "))
+		name, err = sendHandshake(pipe.Client, scannerOf(" alice "), clientVersion)
 	})
 
 	if err != nil {
@@ -73,6 +73,60 @@ func TestSetUserNameReturnsTheAckedName(t *testing.T) {
 	}
 	if !strings.Contains(out, userNamePrompt) {
 		t.Errorf("The user was never prompted. Output was: %q", out)
+	}
+}
+
+// The handshake carries the client's version so the server can turn away a
+// client it cannot talk to. Whatever version the client is built with is the
+// version that goes on the wire.
+func TestSetUserNameSendsTheClientVersion(t *testing.T) {
+	pipe := newTestPipe(t)
+	versions := make(chan string, 1)
+
+	go func() {
+		f, err := pipe.Peer.Recv()
+		if err != nil {
+			close(versions)
+			return
+		}
+		versions <- handshakeVersion(t, f)
+		pipe.Peer.SendHandshakeAck("alice")
+	}()
+
+	var err error
+	captureStdout(t, func() {
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
+	})
+	if err != nil {
+		t.Fatalf("sendHandshake returned an unexpected error: %v", err)
+	}
+	if got := <-versions; got != clientVersion {
+		t.Errorf("Server received the version %q, wanted %q", got, clientVersion)
+	}
+}
+
+// A server that refuses the version reports it like any other rejection, and
+// the client passes the reason on rather than swallowing it.
+func TestSetUserNameReportsAVersionRejection(t *testing.T) {
+	pipe := newTestPipe(t)
+
+	go func() {
+		if _, err := pipe.Peer.Recv(); err != nil {
+			return
+		}
+		pipe.Peer.SendError("version mismatch between client and server")
+	}()
+
+	var err error
+	captureStdout(t, func() {
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
+	})
+
+	if err == nil {
+		t.Fatal("sendHandshake returned no error for a refused version")
+	}
+	if err.Error() != "version mismatch between client and server" {
+		t.Errorf("Wanted the server's reason back, got %q", err.Error())
 	}
 }
 
@@ -95,7 +149,7 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf("   ", "bob"))
+		name, err = sendHandshake(pipe.Client, scannerOf("   ", "bob"), clientVersion)
 	})
 
 	if err != nil {
@@ -126,7 +180,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf("alice"))
+		name, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
 	})
 
 	if err == nil {
@@ -150,7 +204,7 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"))
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
 	})
 
 	if err == nil {
@@ -172,7 +226,7 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"))
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
 	})
 
 	if err == nil {
@@ -187,7 +241,7 @@ func TestSetUserNameHandlesClosedInput(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf())
+		name, err = sendHandshake(pipe.Client, scannerOf(), clientVersion)
 	})
 
 	if err != nil {

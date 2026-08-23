@@ -149,7 +149,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	t.Cleanup(func() { out.Close() })
 	fullc := protocol.NewConn(in)
 	chatClient := newClient(fullc, "Harry")
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go chatClient.processClientOutQueue(chatHub)
 	peer := protocol.NewConn(out)
 
@@ -173,7 +173,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 
 func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go testHelp.Client.processClientOutQueue(chatHub)
 
 	// Break the socket so the next write fails.
@@ -193,7 +193,7 @@ func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 
 func TestReadLoop(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go testHelp.Client.readClientInput(chatHub)
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
@@ -212,7 +212,7 @@ func TestReadLoop(t *testing.T) {
 
 func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go testHelp.Client.readClientInput(chatHub)
 
 	// A frame past MaxFrameSize is recoverable: protocol.Conn resynchronizes on
@@ -247,11 +247,11 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 
 func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go testHelp.Client.readClientInput(chatHub)
 
 	// A kind this server does not handle must not tear down the connection.
-	if err := testHelp.Peer.SendHandshake("test"); err != nil {
+	if err := testHelp.Peer.SendHandshake("test", serverVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
@@ -272,7 +272,7 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go testHelp.Client.readClientInput(chatHub)
 	testHelp.OutConn.Close()
 	var got *Client
@@ -288,7 +288,7 @@ func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 
 func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	go testHelp.Client.readClientInput(chatHub)
 	testHelp.InConn.Close()
 	var got *Client
@@ -304,7 +304,7 @@ func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 
 func TestDoneGuardsBroadcastSend(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
 	// Nothing is draining chatHub.Broadcast, so readClientInput parks in the
@@ -323,7 +323,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 
 func TestDoneGuardsUnregister(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
 	chatHub.Stop()
@@ -434,7 +434,7 @@ func TestAcceptLoop(t *testing.T) {
 		t.Fatalf("Could not set a read deadline: %v", err)
 	}
 	peer := protocol.NewConn(conn)
-	if err := peer.SendHandshake("Harry"); err != nil {
+	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 	ackFrame, err := peer.Recv()
@@ -501,7 +501,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	serverSide, clientSide := net.Pipe()
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
-	chatHub := newHub()
+	chatHub := newHub(serverVersion)
 	chatHub.Stop()
 
 	go handleNewConn(chatHub, serverSide)
@@ -510,7 +510,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	}
 
 	peer := protocol.NewConn(clientSide)
-	if err := peer.SendHandshake("Harry"); err != nil {
+	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
@@ -537,7 +537,7 @@ func TestHandleNewConnReportsATakenName(t *testing.T) {
 		t.Fatalf("Could not set a deadline: %v", err)
 	}
 	peer := protocol.NewConn(clientSide)
-	if err := peer.SendHandshake("Harry"); err != nil {
+	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
@@ -566,7 +566,7 @@ func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
 	go func() { handleNewConn(chatHub, serverSide); close(exited) }()
 
 	peer := protocol.NewConn(clientSide)
-	if err := peer.SendHandshake("Harry"); err != nil {
+	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 	// Take the ack, then stop the hub. Nothing drains Broadcast after that, so
@@ -606,7 +606,7 @@ func TestServeShutsDownOnSignal(t *testing.T) {
 		t.Fatalf("Could not set a read deadline: %v", err)
 	}
 	peer := protocol.NewConn(conn)
-	if err := peer.SendHandshake("Harry"); err != nil {
+	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 	if _, err := peer.Recv(); err != nil {
@@ -710,13 +710,62 @@ func TestVerifyNameRejectsBadNames(t *testing.T) {
 			server := protocol.NewConn(in)
 			peer := protocol.NewConn(out)
 
-			go func() { peer.SendHandshake(tc.name) }()
+			go func() { peer.SendHandshake(tc.name, serverVersion) }()
 
 			got, err := verifyName(server)
 			if err == nil {
 				t.Fatalf("verifyName accepted %q as %q, wanted a rejection", tc.name, got)
 			}
 		})
+	}
+}
+
+// The version is checked before the name: a client built against a different
+// protocol cannot be talked to, whatever it calls itself.
+func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
+	cases := []struct {
+		desc    string
+		version string
+	}{
+		{"an older client", "0.0.0"},
+		{"a newer client", "0.0.2"},
+		{"a client that sends no version at all", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			in, out := net.Pipe()
+			t.Cleanup(func() { in.Close(); out.Close() })
+			server := protocol.NewConn(in)
+			peer := protocol.NewConn(out)
+
+			go func() { peer.SendHandshake("Harry", tc.version) }()
+
+			got, err := verifyName(server)
+			if err == nil {
+				t.Fatalf("verifyName accepted version %q as %q, wanted a rejection", tc.version, got)
+			}
+			if !strings.Contains(err.Error(), "version") {
+				t.Errorf("verifyName rejected version %q with %v, wanted the reason to name the version", tc.version, err)
+			}
+		})
+	}
+}
+
+// A matching version is waved through and the name is returned as validated.
+func TestVerifyNameAcceptsAMatchingVersion(t *testing.T) {
+	in, out := net.Pipe()
+	t.Cleanup(func() { in.Close(); out.Close() })
+	server := protocol.NewConn(in)
+	peer := protocol.NewConn(out)
+
+	go func() { peer.SendHandshake("  Harry  ", serverVersion) }()
+
+	got, err := verifyName(server)
+	if err != nil {
+		t.Fatalf("verifyName rejected a matching version: %v", err)
+	}
+	if got != "Harry" {
+		t.Errorf("verifyName returned %q, wanted the cleaned %q", got, "Harry")
 	}
 }
 

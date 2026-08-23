@@ -61,13 +61,16 @@ func TestSendHelpersRoundTrip(t *testing.T) {
 		},
 		{
 			name: "handshake",
-			send: func(c *Conn) error { return c.SendHandshake("alice") },
+			send: func(c *Conn) error { return c.SendHandshake("alice", "0.0.1") },
 			kind: KindHandshake,
 			check: func(t *testing.T, f Frame) {
 				var hs Handshake
 				payloadInto(t, f, &hs)
 				if hs.Name != "alice" {
 					t.Errorf("Received the name %q, wanted %q", hs.Name, "alice")
+				}
+				if hs.Version != "0.0.1" {
+					t.Errorf("Received the version %q, wanted %q", hs.Version, "0.0.1")
 				}
 			},
 		},

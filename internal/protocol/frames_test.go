@@ -34,9 +34,9 @@ func TestBuildersSetKindAndPayload(t *testing.T) {
 		},
 		{
 			name:        "handshake",
-			build:       func() (Frame, error) { return newHandshakeFrame("alice") },
+			build:       func() (Frame, error) { return newHandshakeFrame("alice", "0.0.1") },
 			wantKind:    KindHandshake,
-			wantPayload: `{"name":"alice"}`,
+			wantPayload: `{"name":"alice","version":"0.0.1"}`,
 		},
 		{
 			name:        "handshake ack",

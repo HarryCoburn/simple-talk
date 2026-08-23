@@ -87,6 +87,19 @@ func handshakeName(t *testing.T, f protocol.Frame) string {
 	return hs.Name
 }
 
+// handshakeVersion reads a KindHandshake frame from the peer and returns the version it carries.
+func handshakeVersion(t *testing.T, f protocol.Frame) string {
+	t.Helper()
+	if f.Kind != protocol.KindHandshake {
+		t.Fatalf("Wanted a %q frame, got %q", protocol.KindHandshake, f.Kind)
+	}
+	var hs protocol.Handshake
+	if err := json.Unmarshal(f.Payload, &hs); err != nil {
+		t.Fatalf("Could not unpack the handshake payload: %v", err)
+	}
+	return hs.Version
+}
+
 // chatFrom unpacks a KindChat frame, returning From and Text fields.
 func chatFrom(t *testing.T, f protocol.Frame) (string, string) {
 	t.Helper()
