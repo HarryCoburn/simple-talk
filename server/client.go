@@ -51,7 +51,7 @@ func (c *Client) readClientInput(hub *Hub) {
 			case errors.Is(err, io.EOF):
 				log.Print("Connection closed cleanly")
 			case errors.Is(err, protocol.ErrBadFrame), errors.Is(err, protocol.ErrFrameTooLarge):
-				log.Printf("discarding unusuable frame from %s: %v", c.Name, err)
+				log.Printf("discarding unusable frame from %s: %v", c.Name, err)
 				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
 					log.Printf("could not report frame error to %s: %v", c.Name, sendErr)
 					c.leave(hub)
