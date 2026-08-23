@@ -230,3 +230,70 @@ func TestReadClientInputRejectsADisallowedMessage(t *testing.T) {
 	default:
 	}
 }
+
+// A panic in a command handler is one client's problem. Without a recover on the
+// read goroutine it unwinds past main and every other session dies with it.
+func TestReadLoopSurvivesAPanickingHandler(t *testing.T) {
+	logs := captureLog(t)
+
+	// Register a handler that panics. commandNames caches the roster on its
+	// first call, so prime it before adding this one: otherwise the cache can
+	// capture "boom" and /help reports it for the rest of the run.
+	_ = commandNames()
+	commands["boom"] = func(cmdCtx) error { panic("handler exploded") }
+	t.Cleanup(func() { delete(commands, "boom") })
+
+	chatHub, _ := newTestHub(t)
+	victim := setUpTest(t)
+	victim.Client.Name = "Alice"
+	mustRegister(t, chatHub, victim.Client)
+	bystander := joinRoom(t, chatHub, "Bob")
+
+	go victim.Client.readClientInput(chatHub)
+	if err := victim.Peer.SendCommand("boom", nil); err != nil {
+		t.Fatalf("Could not send the command: %v", err)
+	}
+
+	// The panicking client is dropped, which the room hears about. Waiting on
+	// that announcement also means the hub has finished the unregister.
+	if got, want := systemText(t, nextReply(t, bystander)), "Alice has disconnected."; got != want {
+		t.Fatalf("The room was told %q, wanted %q", got, want)
+	}
+	wantRoster(t, chatHub, "Bob")
+
+	// Bob is untouched: the room still delivers.
+	if err := chatHub.Broadcast(mustChatFrame(t, "Bob", "still here")); err != nil {
+		t.Fatalf("Could not broadcast after the panic: %v", err)
+	}
+	if got := chatText(t, nextReply(t, bystander)); got != "still here" {
+		t.Errorf("Bob received %q after the panic, wanted %q", got, "still here")
+	}
+
+	if !strings.Contains(logs.String(), "panic in the read loop for Alice") {
+		t.Errorf("The panic was not logged. Log was: %q", logs.String())
+	}
+}
+
+// The write goroutine needs its own recover: one deferred on the read goroutine
+// cannot see a panic raised here.
+func TestWriteLoopSurvivesAPanic(t *testing.T) {
+	logs := captureLog(t)
+	chatHub, _ := newTestHub(t)
+
+	// No Conn, so the first write panics on a nil dereference.
+	broken := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	mustRegister(t, chatHub, broken)
+	bystander := joinRoom(t, chatHub, "Bob")
+
+	go broken.processClientOutQueue(chatHub)
+	broken.Out <- mustChatFrame(t, "Alice", "boom")
+
+	if got, want := systemText(t, nextReply(t, bystander)), "Alice has disconnected."; got != want {
+		t.Fatalf("The room was told %q, wanted %q", got, want)
+	}
+	wantRoster(t, chatHub, "Bob")
+
+	if !strings.Contains(logs.String(), "panic in the write loop for Alice") {
+		t.Errorf("The panic was not logged. Log was: %q", logs.String())
+	}
+}

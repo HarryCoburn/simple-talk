@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"runtime/debug"
 	"strings"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
@@ -28,7 +29,25 @@ func newClient(conn *protocol.Conn, name string) *Client {
 	}
 }
 
+// guard turns a panic on one client's goroutine into that one client leaving.
+// Without it a bug anywhere in a session — a command handler, a malformed frame,
+// a nil dereference — unwinds past main and takes every other user's session
+// with it. The client is dropped rather than resumed: whatever invariant the
+// panic broke, this connection is no longer trustworthy.
+//
+// Deferred at the top of each of a client's goroutines. recover only sees panics
+// from the goroutine it is deferred in, so every goroutine needs its own.
+func (c *Client) guard(hub *Hub, loop string) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	log.Printf("panic in the %s for %s: %v\n%s", loop, c.Name, r, debug.Stack())
+	c.leave(hub)
+}
+
 func (c *Client) processClientOutQueue(hub *Hub) {
+	defer c.guard(hub, "write loop")
 	// Listens to the client's Out queue, then writes any message received to Writer for display.
 	// The socket belongs to hub.closeClient, and that closes c.Out, so this loop does not need
 	// to close.
@@ -44,6 +63,7 @@ func (c *Client) processClientOutQueue(hub *Hub) {
 }
 
 func (c *Client) readClientInput(hub *Hub) {
+	defer c.guard(hub, "read loop")
 	for {
 		// Reads what the client writes. Closes client safely if there is a problem with reading.
 		frame, err := c.Conn.Recv()
