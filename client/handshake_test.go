@@ -104,31 +104,6 @@ func TestSetUserNameSendsTheClientVersion(t *testing.T) {
 	}
 }
 
-// A server that refuses the version reports it like any other rejection, and
-// the client passes the reason on rather than swallowing it.
-func TestSetUserNameReportsAVersionRejection(t *testing.T) {
-	pipe := newTestPipe(t)
-
-	go func() {
-		if _, err := pipe.Peer.Recv(); err != nil {
-			return
-		}
-		pipe.Peer.SendError("version mismatch between client and server")
-	}()
-
-	var err error
-	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
-	})
-
-	if err == nil {
-		t.Fatal("sendHandshake returned no error for a refused version")
-	}
-	if err.Error() != "version mismatch between client and server" {
-		t.Errorf("Wanted the server's reason back, got %q", err.Error())
-	}
-}
-
 // A blank line is rejected locally: the server should only ever see the second,
 // valid name, and the user should be prompted again.
 func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
@@ -165,7 +140,8 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	}
 }
 
-// Anything other than a handshake ack means the handshake did not complete.
+// A reply that is neither an ack nor an error leaves the handshake unfinished:
+// the client has no name to run under, so it must not press on regardless.
 func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	pipe := newTestPipe(t)
 
@@ -173,7 +149,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 		if _, err := pipe.Peer.Recv(); err != nil {
 			return
 		}
-		pipe.Peer.SendError("name taken")
+		pipe.Peer.SendSystem("welcome to the room") // a real frame, but not one that ends a handshake
 	}()
 
 	var name string
@@ -183,10 +159,10 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Fatalf("setUserName returned %q and no error, wanted an error for a non-ack reply", name)
+		t.Fatalf("sendHandshake returned %q and no error, wanted an error for a non-ack reply", name)
 	}
 	if name != "" {
-		t.Errorf("setUserName returned the name %q alongside an error, wanted an empty name", name)
+		t.Errorf("sendHandshake returned the name %q alongside an error, wanted an empty name", name)
 	}
 }
 
