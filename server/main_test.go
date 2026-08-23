@@ -17,41 +17,30 @@ func TestRegisterClient(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	// Testing
-	if got := chatHub.clientCount(); got != 0 {
-		t.Errorf("Expected length 0, got %d", got)
-	}
+	wantRoster(t, chatHub)
 
 	// Register a client
-	mustRegister(t, chatHub, &Client{Out: make(chan protocol.Frame, 1)})
+	mustRegister(t, chatHub, &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)})
 
-	if got := chatHub.clientCount(); got != 1 {
-		t.Errorf("Expected length 1, got %d", got)
-	}
-
+	wantRoster(t, chatHub, "Alice")
 }
 
 func TestDeregisterClient(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	// Make a client
-	chatClient := &Client{Out: make(chan protocol.Frame, 1)}
+	chatClient := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
 
 	// Register, then deregister the client
 	mustRegister(t, chatHub, chatClient)
 	chatHub.Unregister <- chatClient
 
 	// Testing
-	if got := chatHub.clientCount(); got != 0 {
-		t.Errorf("Expected length 0 after de-registration, got %d", got)
-	}
+	wantRoster(t, chatHub)
 
 	// Try double deregistration
 	chatHub.Unregister <- chatClient
-
-	if got := chatHub.clientCount(); got != 0 {
-		t.Errorf("Expected length 0 after double de-registration, got %d", got)
-	}
-
+	wantRoster(t, chatHub)
 }
 
 // The name check and the insert are one hub operation, so a name can only be
@@ -65,9 +54,7 @@ func TestRegisterRejectsADuplicateName(t *testing.T) {
 	if !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Wanted ErrNameTaken for a second %q, got %v", "Harry", err)
 	}
-	if got := chatHub.clientCount(); got != 1 {
-		t.Errorf("Expected the duplicate to be refused, hub holds %d clients", got)
-	}
+	wantRoster(t, chatHub, "Harry")
 
 	// The name frees up once its holder leaves.
 	chatHub.Unregister <- first
@@ -105,9 +92,7 @@ func TestRegisterIsAtomicUnderRacingNames(t *testing.T) {
 	if won != 1 {
 		t.Errorf("Wanted exactly 1 client to claim the name, %d did", won)
 	}
-	if got := chatHub.clientCount(); got != 1 {
-		t.Errorf("Wanted 1 registered client, got %d", got)
-	}
+	wantRoster(t, chatHub, "Harry")
 }
 
 // Test if broadcasting works to connected clients
@@ -144,16 +129,14 @@ func TestBroadcast(t *testing.T) {
 
 func TestDroppedClientPath(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	client := &Client{Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
+	client := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
 	mustRegister(t, chatHub, client)
 	frame1 := mustChatFrame(t, "Alice", "Test")
 	frame2 := mustChatFrame(t, "Alice", "Received")
 	chatHub.Broadcast <- frame1 // Fill buffer
 	chatHub.Broadcast <- frame2 // Overload Client.Out, which should force server to drop the client.
 
-	if got := chatHub.clientCount(); got != 0 {
-		t.Errorf("Expected length 0, got %d", got)
-	}
+	wantRoster(t, chatHub)
 
 }
 
@@ -484,9 +467,7 @@ func TestAcceptLoop(t *testing.T) {
 		t.Errorf("Wanted %q, got %q", "Harry has connected.", got)
 	}
 
-	if got := chatHub.clientCount(); got != 1 {
-		t.Errorf("Wanted 1 registered client. got %d", got)
-	}
+	wantRoster(t, chatHub, "Harry")
 }
 
 func TestAcceptLoopExitsWhenListenerCloses(t *testing.T) {
@@ -566,9 +547,7 @@ func TestHandleNewConnReportsATakenName(t *testing.T) {
 	if _, err := peer.Recv(); !errors.Is(err, io.EOF) {
 		t.Errorf("Wanted the server to hang up after rejecting, got %v", err)
 	}
-	if got := chatHub.clientCount(); got != 1 {
-		t.Errorf("The rejected client was registered anyway, hub holds %d", got)
-	}
+	wantRoster(t, chatHub, "Harry")
 }
 
 // The connect announcement used to be an unguarded send, so a hub that stopped

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 
@@ -89,4 +90,19 @@ func setUpTest(t *testing.T) testHelper {
 		Peer:    peer,
 		InConn:  in,
 		OutConn: out}
+}
+
+// wantRoster checks exactly who the hub is holding. clientNames is the accessor
+// the /who command reads, so this asserts the same hub state a user would see,
+// and it reports names rather than a bare count so a failure says who is there.
+func wantRoster(t *testing.T, h *Hub, want ...string) {
+	t.Helper()
+	got := h.clientNames()
+	if len(want) == 0 && len(got) == 0 {
+		return
+	}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("The hub holds %v, wanted %v", got, want)
+	}
 }

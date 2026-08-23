@@ -1,10 +1,10 @@
 # Next time
 - ~~Get disconnect message to announce on unclean disconnects to all other parties.~~
 - ~~Use log instead of fmt where needed.~~
-- Experiment with slash commands or other MUD style commands from the client side.
+- ~~Experiment with slash commands or other MUD style commands from the client side.~~
 - Update all unit tests and thoroughly understand the error paths and why they're in there.
 - TLS
-- Do we need kindError?
+
 
 # Later
 - BubbleTea conversion
