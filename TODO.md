@@ -34,13 +34,13 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
       second one is in `ErrUnrecoverable`'s message, which reaches clients in an error frame.
 - [X] `server/commands.go:23` — the comment says the table is "Populated in `init()`". It is a
       literal now; the comment is describing code that no longer exists.
-- [ ] `commandNames` (`server/commands.go:31`) is a hand-maintained copy of the `commands` map keys.
+- [X] `commandNames` (`server/commands.go:31`) is a hand-maintained copy of the `commands` map keys.
       Derive it from the map and sort it, so `/help` cannot drift from what dispatch accepts.
-- [ ] Error-string style: lowercase, unpunctuated, since these get wrapped into longer sentences.
+- [X] Error-string style: lowercase, unpunctuated, since these get wrapped into longer sentences.
       `server/main.go:138` ("wrong frame type sent in handshake! ...") and `client/handshake.go:46`
       ("username failure.").
-- [ ] `%v` → `%w` at the remaining wrap sites: `server/main.go:143`, `client/handshake.go:55`.
-- [ ] The `sendLoop` comment at `client/main.go:17-19` overstates the behaviour. It claims the send
+- [X] `%v` → `%w` at the remaining wrap sites: `server/main.go:143`, `client/handshake.go:55`.
+- [X] The `sendLoop` comment at `client/main.go:17-19` overstates the behaviour. It claims the send
       loop "stops once dead is closed, so a server-side disconnect doesn't leave it blocking on
       input" — but `sendLoop` (`client/main.go:81`) checks `dead` only *after* `scan.Scan()` returns,
       so a real terminal user still sits blocked until they press enter.

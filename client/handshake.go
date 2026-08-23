@@ -43,7 +43,7 @@ func sendHandshake(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, er
 			return "", nil
 		}
 		// Catch for any other kind of error
-		return "", errors.New("username failure.")
+		return "", errors.New("username failure")
 	}
 }
 
@@ -52,7 +52,7 @@ func recvHandshake(conn *protocol.Conn) (string, error) {
 	// Check the response
 	resp, err := conn.Recv()
 	if err != nil {
-		return "", fmt.Errorf("receive error while setting username: %v", err)
+		return "", fmt.Errorf("receive error while setting username: %w", err)
 	}
 	// Check the kind of response for an error
 	if resp.Kind == protocol.KindError {

@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -13,6 +15,7 @@ type cmdCtx struct {
 	client *Client  // Who ran the command.
 	hub    *Hub     // For queries and for replying.
 	args   []string // Everything after the command word.
+	roster []string // Sorted command names. For /help command to avoid circular dependency
 }
 
 // A cmdHandler runs one command. Replies to the caller go through ctx.reply;
@@ -28,10 +31,14 @@ var commands = map[string]cmdHandler{
 	"help": cmdHelp,
 }
 
-var commandNames = []string{
-	"help",
-	"who",
-}
+var commandNames = sync.OnceValue(func() []string {
+	names := make([]string, 0, len(commands))
+	for name := range commands {
+		names = append(names, name)
+	}
+	slices.Sort(names) // map order is random; /help must be stable
+	return names
+})
 
 // reply sends a system message to the caller alone.
 func (ctx cmdCtx) reply(format string, a ...any) error {
@@ -60,7 +67,7 @@ func dispatchCommand(c *Client, hub *Hub, f protocol.Frame) error {
 	}
 
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
-	ctx := cmdCtx{client: c, hub: hub, args: cmd.Args}
+	ctx := cmdCtx{client: c, hub: hub, args: cmd.Args, roster: commandNames()}
 
 	if name == "" {
 		return ctx.replyError("no command given")
@@ -90,5 +97,5 @@ func cmdWho(ctx cmdCtx) error {
 // cmdHelp lists the available commands.
 func cmdHelp(ctx cmdCtx) error {
 
-	return ctx.reply("Commands: %s", strings.Join(commandNames, ", "))
+	return ctx.reply("Commands: %s", strings.Join(ctx.roster, ", "))
 }

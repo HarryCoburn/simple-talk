@@ -177,24 +177,6 @@ func TestCmdHelpListsTheCommandTable(t *testing.T) {
 	}
 }
 
-// commandNames is what /help prints and the command table is what dispatch
-// uses; a command added to one and not the other is a bug in either direction.
-func TestCommandNamesMatchTable(t *testing.T) {
-	if len(commandNames) != len(commands) {
-		t.Errorf("commandNames is %v, wanted the %d commands in the table", commandNames, len(commands))
-	}
-	for _, name := range commandNames {
-		if _, ok := commands[name]; !ok {
-			t.Errorf("commandNames lists %q, which is not a command", name)
-		}
-	}
-	for i := 1; i < len(commandNames); i++ {
-		if commandNames[i-1] > commandNames[i] {
-			t.Errorf("commandNames is %v, wanted it sorted", commandNames)
-			break
-		}
-	}
-}
 
 // Command names are matched after trimming and lowercasing, so the user's
 // spacing and capitalization do not decide whether a command is found.
