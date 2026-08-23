@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"log"
+	"slices"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -19,7 +20,7 @@ type Hub struct {
 	Register   chan RegisterReq     // Register a new client
 	Unregister chan *Client         // Unregister a client
 	Broadcast  chan protocol.Frame  // Send a frame to all clients
-	Query      chan ClientNumReq    // Send a query to the server
+	Query      chan func(*Hub)      // Run a read-only query inside Hub.run()
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
 	clientList map[*Client]struct{} // Map of all clients.
@@ -31,7 +32,7 @@ func newHub() *Hub {
 		Register:   make(chan RegisterReq),
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan protocol.Frame),
-		Query:      make(chan ClientNumReq),
+		Query:      make(chan func(*Hub)),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
@@ -65,10 +66,8 @@ func (h *Hub) run() {
 			h.deliver(f)
 		case f := <-h.Broadcast:
 			h.deliver(f)
-		case req := <-h.Query:
-			// Currenly only handles clientList length requests
-			clientNum := len(h.clientList)
-			req.reply <- clientNum
+		case query := <-h.Query:
+			query(h)
 		case <-h.Done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
 			for c := range h.clientList {
@@ -95,19 +94,34 @@ func (h *Hub) register(c *Client) error {
 	}
 }
 
-func (h *Hub) clientCount() int {
-	ch := make(chan int, 1)
+func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
+	ch := make(chan T, 1)
+	req := func(h *Hub) { ch <- fn(h) }
+
+	var zero T
 	select {
-	case h.Query <- ClientNumReq{reply: ch}:
+	case h.Query <- req:
 	case <-h.Done:
-		return 0
+		return zero, false
 	}
 	select {
-	case n := <-ch:
-		return n
+	case v := <-ch:
+		return v, true
 	case <-h.Done:
-		return 0
+		return zero, false
 	}
+}
+
+func (h *Hub) clientNames() []string {
+	names, _ := query(h, func(h *Hub) []string {
+		names := make([]string, 0, len(h.clientList))
+		for c := range h.clientList {
+			names = append(names, c.Name)
+		}
+		slices.Sort(names)
+		return names
+	})
+	return names
 }
 
 func (h *Hub) nameInUse(name string) bool {
@@ -130,12 +144,28 @@ func (h *Hub) closeClient(c *Client) {
 	delete(h.clientList, c)
 }
 
+// sendTo queues a frame for a single client.
+func (h *Hub) sendTo(c *Client, f protocol.Frame) {
+	query(h, func(h *Hub) struct{} {
+		h.deliverTo(c, f)
+		return struct{}{}
+	})
+}
+
+// deliverTo queues one frame for one client in the hub goroutine.
+func (h *Hub) deliverTo(c *Client, f protocol.Frame) {
+	if _, ok := h.clientList[c]; !ok {
+		return // already gone
+	}
+	select {
+	case c.Out <- f:
+	default: // assume client is closed if we cannot reach c.Out
+		h.closeClient(c)
+	}
+}
+
 func (h *Hub) deliver(f protocol.Frame) {
 	for c := range h.clientList {
-		select {
-		case c.Out <- f:
-		default: // If a c.Out cannot be reached, assume the client has left and close it.
-			h.closeClient(c)
-		}
+		h.deliverTo(c, f)
 	}
 }
