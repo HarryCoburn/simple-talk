@@ -12,6 +12,7 @@ const (
 	KindChat         Kind = "chat"
 	KindError        Kind = "error"
 	KindSystem       Kind = "system"
+	KindCommand      Kind = "command"
 )
 
 type Frame struct {
@@ -38,4 +39,9 @@ type Error struct {
 
 type System struct {
 	Text string `json:"text"`
+}
+
+type Command struct {
+	Name string   `json:"name"`
+	Args []string `json:"args,omitempty"`
 }

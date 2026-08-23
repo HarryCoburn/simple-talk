@@ -46,3 +46,10 @@ func NewHandshakeFrame(name string) (Frame, error) {
 func NewHandshakeAckFrame(name string) (Frame, error) {
 	return newFrame(KindHandshakeAck, HandshakeAck{Name: name})
 }
+
+func NewCommandFrame(name string, args []string) (Frame, error) {
+	return newFrame(KindCommand, Command{
+		Name: name,
+		Args: args,
+	})
+}
