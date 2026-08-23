@@ -103,6 +103,7 @@ func (c *Conn) SendSystem(text string) error {
 // Returns one newline-deliminted frame, or one of the special errors.
 func (c *Conn) readLine() ([]byte, error) {
 	line, err := c.r.ReadSlice('\n')
+	// happy path
 	if err == nil {
 		return line, nil
 	}

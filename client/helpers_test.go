@@ -110,3 +110,16 @@ func waitClosed(t *testing.T, c <-chan struct{}, what string) {
 		t.Fatalf("Timed out waiting for %s to close", what)
 	}
 }
+
+// commandFrom unpacks a KindCommand frame, returning its Name and Args fields.
+func commandFrom(t *testing.T, f protocol.Frame) (string, []string) {
+	t.Helper()
+	if f.Kind != protocol.KindCommand {
+		t.Fatalf("Wanted a %q frame, got %q", protocol.KindCommand, f.Kind)
+	}
+	var cmd protocol.Command
+	if err := json.Unmarshal(f.Payload, &cmd); err != nil {
+		t.Fatalf("Could not unpack the command payload: %v", err)
+	}
+	return cmd.Name, cmd.Args
+}
