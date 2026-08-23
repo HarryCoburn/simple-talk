@@ -24,15 +24,15 @@ const messageFormat = "<%s> %s"
 const poseFormat = "%s %s"
 
 type Hub struct {
-	register   chan RegisterReq     // Register a new client
-	unregister chan *Client         // Unregister a client
-	broadcast  chan protocol.Frame  // Send a frame to all clients
-	tasks      chan func(*Hub)      // Run a closure inside Hub.run without disrupting serialization
-	done       chan struct{}        // Signal we're done with the hub. Begin teardown.
-	finished   chan struct{}        // Signal the hub is completely closed.
-	stopOnce   sync.Once            // Guards against a second close
-	clientList map[*Client]struct{} // Map of all clients.
-	version    string               // The protocol version this server speaks
+	register   chan RegisterReq    // Register a new client
+	unregister chan *Client        // Unregister a client
+	broadcast  chan protocol.Frame // Send a frame to all clients
+	tasks      chan func(*Hub)     // Run a closure inside Hub.run without disrupting serialization
+	done       chan struct{}       // Signal we're done with the hub. Begin teardown.
+	finished   chan struct{}       // Signal the hub is completely closed.
+	stopOnce   sync.Once           // Guards against a second close
+	clientList map[string]*Client  // Map of all clients keyed to the cleaned and folded username.
+	version    string              // The protocol version this server speaks
 }
 
 // Create a new hub
@@ -44,7 +44,7 @@ func newHub(v string) *Hub {
 		tasks:      make(chan func(*Hub)),
 		done:       make(chan struct{}),
 		finished:   make(chan struct{}),
-		clientList: make(map[*Client]struct{}),
+		clientList: make(map[string]*Client),
 		version:    v,
 	}
 	return &hub
@@ -62,10 +62,10 @@ func (h *Hub) run() {
 				req.reply <- ErrNameTaken
 				continue
 			}
-			h.clientList[req.client] = struct{}{}
+			h.clientList[req.client.Name] = req.client
 			req.reply <- nil
 		case c := <-h.unregister:
-			if _, ok := h.clientList[c]; !ok {
+			if _, ok := h.clientList[c.Name]; !ok {
 				continue // Client is already unregistered.
 			}
 			h.closeClient(c)
@@ -81,7 +81,7 @@ func (h *Hub) run() {
 		case <-h.done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
 			for c := range h.clientList {
-				h.closeClient(c)
+				h.closeClient(h.clientList[c])
 			}
 			return
 		}
@@ -177,7 +177,7 @@ func (h *Hub) clientNames() ([]string, error) {
 	names, ok := query(h, func(h *Hub) []string {
 		names := make([]string, 0, len(h.clientList))
 		for c := range h.clientList {
-			names = append(names, c.Name)
+			names = append(names, c)
 		}
 		slices.Sort(names)
 		return names
@@ -194,7 +194,7 @@ func (h *Hub) nameInUse(name string) bool {
 		return true
 	}
 	for c := range h.clientList {
-		ck, err := validate.NameKey(c.Name)
+		ck, err := validate.NameKey(c)
 		if err != nil {
 			continue // Registered names were validated, so this should not happen.
 		}
@@ -206,14 +206,14 @@ func (h *Hub) nameInUse(name string) bool {
 }
 
 func (h *Hub) closeClient(c *Client) {
-	if _, ok := h.clientList[c]; !ok {
+	if _, ok := h.clientList[c.Name]; !ok {
 		return
 	}
 	close(c.Out)
 	if c.Conn != nil {
 		c.Conn.Close()
 	}
-	delete(h.clientList, c)
+	delete(h.clientList, c.Name)
 }
 
 // sendTo queues a frame for a single client. Because deliverTo can drop a client whose
@@ -229,7 +229,7 @@ func (h *Hub) sendTo(c *Client, f protocol.Frame) error {
 
 // deliverTo queues one frame for one client in the hub goroutine.
 func (h *Hub) deliverTo(c *Client, f protocol.Frame) {
-	if _, ok := h.clientList[c]; !ok {
+	if _, ok := h.clientList[c.Name]; !ok {
 		return // already gone
 	}
 	select {
@@ -241,6 +241,6 @@ func (h *Hub) deliverTo(c *Client, f protocol.Frame) {
 
 func (h *Hub) deliver(f protocol.Frame) {
 	for c := range h.clientList {
-		h.deliverTo(c, f)
+		h.deliverTo(h.clientList[c], f)
 	}
 }

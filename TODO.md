@@ -51,7 +51,7 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P1 — cheap now, expensive later
 
-- [ ] **Version field** on `Frame` or `Handshake` (`internal/protocol/protocol.go:18`). Nearly free
+- [X] **Version field** on `Frame` or `Handshake` (`internal/protocol/protocol.go:18`). Nearly free
       today; painful once anyone else runs the client. Cheapest high-value item on this list.
 - [ ] **Key `clientList` by folded name.** `nameInUse` (`server/hub.go:184`) linearly scans the map
       *and* runs `validate.NameKey` per client per registration — so a reconnect storm is O(N²) with
