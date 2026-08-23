@@ -27,10 +27,11 @@ type Hub struct {
 	finished   chan struct{}        // Signal the hub is completely closed.
 	stopOnce   sync.Once            // Guards against a second close
 	clientList map[*Client]struct{} // Map of all clients.
+	version    string               // Server string number
 }
 
 // Create a new hub
-func newHub() *Hub {
+func newHub(v string) *Hub {
 	hub := Hub{
 		register:   make(chan RegisterReq),
 		unregister: make(chan *Client),
@@ -39,6 +40,7 @@ func newHub() *Hub {
 		done:       make(chan struct{}),
 		finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
+		version:    v,
 	}
 	return &hub
 }

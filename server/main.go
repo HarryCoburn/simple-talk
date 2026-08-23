@@ -20,6 +20,8 @@ type RegisterReq struct {
 	reply  chan error
 }
 
+const serverVersion string = "0.0.1"
+
 // Run starts the server and blocks until an interrupt or SIGTERM
 func Run() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
@@ -37,7 +39,7 @@ func Run() {
 
 func serve(ln net.Listener, shutdown <-chan os.Signal) {
 
-	hub := newHub()
+	hub := newHub(serverVersion)
 
 	stopped := make(chan struct{})
 	go hub.run()
@@ -141,6 +143,10 @@ func verifyName(fullc *protocol.Conn) (string, error) {
 	var hs protocol.Handshake
 	if err := json.Unmarshal(f.Payload, &hs); err != nil {
 		return "", fmt.Errorf("something wrong with the name payload: %w", err)
+	}
+
+	if hs.Version != serverVersion {
+		return "", fmt.Errorf("version mismatch between client and server. Client: %s, Server: %v", hs.Version, serverVersion)
 	}
 
 	// The client validates too, for a faster prompt, but a hand-written client

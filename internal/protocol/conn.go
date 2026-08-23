@@ -49,8 +49,8 @@ func (c *Conn) SendFrame(f Frame) error {
 	return c.enc.Encode(f) // If this starts failing, close the client.
 }
 
-func (c *Conn) SendHandshake(name string) error {
-	f, err := newHandshakeFrame(name)
+func (c *Conn) SendHandshake(name string, version string) error {
+	f, err := newHandshakeFrame(name, version)
 	if err != nil {
 		return err
 	}

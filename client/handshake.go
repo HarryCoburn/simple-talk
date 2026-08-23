@@ -14,7 +14,7 @@ import (
 // that the user name given is legal and doesn't clash with another name on the server.
 // Receipt of a HandshakeAck frame proves the server verified the name and tells the client
 // that it is safe to start sendLoop and receiveLoop.
-func sendHandshake(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, error) {
+func sendHandshake(conn *protocol.Conn, inputScanner *bufio.Scanner, version string) (string, error) {
 	fmt.Print(userNamePrompt)
 	for { // To handle reasking if there's a problem. Break if successful.
 		// Get a name and clean it properly
@@ -28,7 +28,7 @@ func sendHandshake(conn *protocol.Conn, inputScanner *bufio.Scanner) (string, er
 				continue
 			}
 			// Try to send it to the server for further validation
-			if err := conn.SendHandshake(cleaned); err != nil {
+			if err := conn.SendHandshake(cleaned, version); err != nil {
 				return "", err
 			}
 			// Check the response

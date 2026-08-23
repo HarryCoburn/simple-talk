@@ -12,7 +12,8 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
-const userNamePrompt = "Please state your username: "
+const userNamePrompt string = "Please state your username: "
+const clientVersion string = "0.0.1"
 
 // main connects to the chat server, sends a handshake through setUserName, then runs a receive loop
 // and send loop.
@@ -27,7 +28,7 @@ func Run() {
 	stdin := bufio.NewScanner(os.Stdin)
 
 	// Handshake
-	name, err := sendHandshake(conn, stdin)
+	name, err := sendHandshake(conn, stdin, clientVersion)
 	if err != nil {
 		log.Printf("problem with setting username: %v", err)
 		return
@@ -48,6 +49,10 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 			fmt.Printf("\nDisconnected: %v\n", err)
 			return
 		}
+		// if f.Version != clientVersion {
+		// 	fmt.Printf("your client version %s does not match server version %s. Update your software", clientVersion, f.Version)
+		// 	return
+		// }
 		switch f.Kind {
 		case protocol.KindChat:
 			var msg protocol.Chat
