@@ -16,7 +16,7 @@ type RegisterReq struct {
 	reply  chan error
 }
 
-func main() {
+func Run() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
 	if err != nil {

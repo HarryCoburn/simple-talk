@@ -17,7 +17,7 @@ const userNamePrompt = "Please state your username: "
 // main connects to the chat server, sends a handshake through setUserName, then runs a receive loop
 // and send loop. The send loop reads stdin and stops once dead is closed, so a server-side disconnect doesn't leave it
 // blocking on input.
-func main() {
+func Run() {
 	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
 	if err != nil {
 		log.Fatal("client could not dial to the server.")
