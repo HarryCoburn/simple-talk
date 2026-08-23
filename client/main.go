@@ -49,10 +49,6 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 			fmt.Printf("\nDisconnected: %v\n", err)
 			return
 		}
-		// if f.Version != clientVersion {
-		// 	fmt.Printf("your client version %s does not match server version %s. Update your software", clientVersion, f.Version)
-		// 	return
-		// }
 		switch f.Kind {
 		case protocol.KindChat:
 			var msg protocol.Chat
