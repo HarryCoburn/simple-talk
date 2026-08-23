@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -576,5 +578,81 @@ func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
 	case <-exited:
 	case <-time.After(time.Second):
 		t.Fatal("handleNewConn did not exit after the hub stopped")
+	}
+}
+
+// A shutdown signal tears down the whole server: serve returns, the listener
+// stops accepting, and connected clients are closed rather than left hanging.
+func TestServeShutsDownOnSignal(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Could not open the listener: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	addr := ln.Addr().String()
+
+	signals := make(chan os.Signal, 1)
+	returned := make(chan struct{})
+	go func() { defer close(returned); serve(ln, signals) }()
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("Could not dial the listener: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("Could not set a read deadline: %v", err)
+	}
+	peer := protocol.NewConn(conn)
+	if err := peer.SendHandshake("Harry"); err != nil {
+		t.Fatalf("Could not send the handshake: %v", err)
+	}
+	if _, err := peer.Recv(); err != nil {
+		t.Fatalf("Did not receive the handshake ack: %v", err)
+	}
+
+	signals <- syscall.SIGTERM
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not return after the shutdown signal.")
+	}
+
+	// The hub finished its teardown before serve returned, so Harry's socket
+	// is closed and the port is free again. Frames already queued for Harry
+	// (his own connect announcement) still read out first.
+	closed := false
+	for range 8 {
+		if _, err := peer.Recv(); err != nil {
+			closed = true
+			break
+		}
+	}
+	if !closed {
+		t.Error("Harry's connection was still open after shutdown.")
+	}
+	if _, err := net.Dial("tcp", addr); err == nil {
+		t.Error("The listener still accepted a connection after shutdown.")
+	}
+}
+
+// If the accept loop stops on its own, serve tears the hub down instead of
+// blocking forever on a signal that is never coming.
+func TestServeShutsDownWhenTheListenerDies(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Could not open the listener: %v", err)
+	}
+
+	returned := make(chan struct{})
+	go func() { defer close(returned); serve(ln, make(chan os.Signal)) }()
+
+	ln.Close()
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not return after the listener closed.")
 	}
 }

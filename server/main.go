@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
@@ -16,6 +19,7 @@ type RegisterReq struct {
 	reply  chan error
 }
 
+// Run starts the server and blocks until an interrupt or SIGTERM
 func Run() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
@@ -23,18 +27,36 @@ func Run() {
 		log.Fatal("Could not open server")
 	}
 
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	serve(ln, signals)
+}
+
+func serve(ln net.Listener, shutdown <-chan os.Signal) {
+
 	hub := newHub()
 
-	// Base server loop. Start the goroutines and block on killServer
-	// Perhaps turn killServer into a select call.
-	killServer := make(chan struct{})
+	stopped := make(chan struct{})
 	go hub.run()
 	go func() {
 		<-hub.Done
 		ln.Close()
 	}()
-	go acceptLoop(hub, ln, killServer)
-	<-killServer
+	go acceptLoop(hub, ln, stopped)
+
+	select {
+	case sig := <-shutdown:
+		log.Printf("received %v, shutting down", sig)
+	case <-stopped:
+		// Listener died, tear down the rest
+		log.Print("stopped accepting connections, shutting down")
+	}
+
+	close(hub.Done)
+	<-stopped
+	<-hub.Finished
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
@@ -60,7 +82,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	fullc := protocol.NewConn(conn)
 	clientName, err := verifyName(fullc)
 	if err != nil {
-		fmt.Println(err)
+		log.Print(err)
 		fullc.Close()
 		return
 	}

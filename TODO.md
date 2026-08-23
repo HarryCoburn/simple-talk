@@ -25,18 +25,9 @@ Watch for exporting identifiers that don't need to be exported
 Missing: no CI, no golangci-lint config, no Makefile. -- Hold until BubbleTea is done and we are ready to push completed builds to my VPS.
 
 2. Code smells and defects
-Actual bugs
 
-server/client.go:81 — wrong format verb. log.Printf("command from %s failed, %f", c.Name, err) uses %f on an error. Every command failure logs %!f(*errors.errorString=&{...}) instead of the message. go vet does not catch it because log.Printf arg checking doesn't flag %f against an interface type here. Also note the comma instead of a colon.
-
-server/main.go:115 — formats an error that is always nil. In verifyName, err is checked and returned at line 108. By line 115 it is necessarily nil, so the wrong-frame-kind path always logs "Wrong frame type sent in handshake! : <nil>". The useful information — what kind actually arrived — is not in the message.
-
-Graceful shutdown is dead code in production. Nothing ever closes hub.Done. main() (server/main.go:32-35) starts a goroutine that blocks on <-hub.Done forever; killServer only closes when acceptLoop returns, which only happens when the listener closes, which only happens on Done. There is no signal handling. So Hub.Done, Hub.Finished, the teardown loop, and closeClient's shutdown path are exercised only by the test suite. In production the server can only be hard-killed: clients get a TCP reset, no disconnect announcements, no flush. The machinery is already written and correct — it just has no trigger.
-
-server/main.go:63 — fmt.Println(err) on the handshake failure path, the last survivor of the "use log instead of fmt" TODO item.
 
 Smells
-
 The Hub's public API is its raw channels. Some callers go through methods (hub.register, c.leave), others send directly (hub.Broadcast <- f at server/main.go:95, chatHub.Unregister <- c throughout the tests). Every direct sender has to remember the select-on-Done dance or risk parking forever — that exact bug is what TestHandleNewConnExitsWhenHubStopsMidHandshake was written for. One inconsistent caller reintroduces it.
 
 Hub.Query is not a query channel. sendTo (server/hub.go:148) pushes a closure that calls deliverTo, which can call closeClient — a mutation. The name says read-only; the type (chan func(*Hub)) permits anything. Either rename it or split reads from writes.
