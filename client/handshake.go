@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bufio"
@@ -58,7 +58,7 @@ func recvHandshake(conn *protocol.Conn) (string, error) {
 	if resp.Kind == protocol.KindError {
 		var serverErr protocol.Error
 		if err := json.Unmarshal(resp.Payload, &serverErr); err != nil {
-			return "", fmt.Errorf("server rejected the name: %v", err)
+			return "", fmt.Errorf("server rejected the name: %w", err)
 		}
 		return "", errors.New(serverErr.Message)
 	}

@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/json"
@@ -106,18 +106,18 @@ func verifyName(fullc *protocol.Conn) (string, error) {
 	fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout))
 	f, err := fullc.Recv()
 	if err != nil {
-		return "", fmt.Errorf("problem with handshake frame: %v", err)
+		return "", fmt.Errorf("problem with handshake frame: %w", err)
 	}
 	fullc.SetReadDeadline(time.Time{})
 
 	// Is it the right kind?
 	if f.Kind != protocol.KindHandshake {
-		return "", fmt.Errorf("wrong frame type sent in handshake! : %v", err)
+		return "", fmt.Errorf("wrong frame type sent in handshake! : %w", err)
 	}
 
 	var hs protocol.Handshake
 	if err := json.Unmarshal(f.Payload, &hs); err != nil {
-		return "", fmt.Errorf("something wrong with the name payload: %v", err)
+		return "", fmt.Errorf("something wrong with the name payload: %w", err)
 	}
 
 	return hs.Name, nil
