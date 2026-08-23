@@ -106,7 +106,7 @@ func TestBroadcast(t *testing.T) {
 	f := mustChatFrame(t, "Alice", "Test")
 	mustRegister(t, chatHub, client1)
 	mustRegister(t, chatHub, client2)
-	chatHub.Broadcast <- f
+	chatHub.Broadcast(f)
 	var f1 protocol.Frame
 	var f2 protocol.Frame
 	select {
@@ -135,8 +135,8 @@ func TestDroppedClientPath(t *testing.T) {
 	mustRegister(t, chatHub, client)
 	frame1 := mustChatFrame(t, "Alice", "Test")
 	frame2 := mustChatFrame(t, "Alice", "Received")
-	chatHub.Broadcast <- frame1 // Fill buffer
-	chatHub.Broadcast <- frame2 // Overload Client.Out, which should force server to drop the client.
+	chatHub.Broadcast(frame1) // Fill buffer
+	chatHub.Broadcast(frame2) // Overload Client.Out, which should force server to drop the client.
 
 	wantRoster(t, chatHub)
 
@@ -198,7 +198,7 @@ func TestReadLoop(t *testing.T) {
 	}
 	var result protocol.Frame
 	select {
-	case result = <-chatHub.Broadcast:
+	case result = <-chatHub.broadcast:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out trying to TestReadLoop")
 	}
@@ -232,7 +232,7 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
 	select {
-	case result := <-chatHub.Broadcast:
+	case result := <-chatHub.broadcast:
 		if got := chatText(t, result); got != "<test> Hello" {
 			t.Errorf("Did not receive correct response after an oversized frame: %q", got)
 		}
@@ -257,7 +257,7 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
 	select {
-	case result := <-chatHub.Broadcast:
+	case result := <-chatHub.broadcast:
 		if got := chatText(t, result); got != "<test> Hello" {
 			t.Errorf("Did not receive correct response after an unsupported kind: %q", got)
 		}

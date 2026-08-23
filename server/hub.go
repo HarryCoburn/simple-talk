@@ -19,7 +19,7 @@ const poseFormat = "%s %s"
 type Hub struct {
 	Register   chan RegisterReq     // Register a new client
 	Unregister chan *Client         // Unregister a client
-	Broadcast  chan protocol.Frame  // Send a frame to all clients
+	broadcast  chan protocol.Frame  // Send a frame to all clients
 	Query      chan func(*Hub)      // Run a read-only query inside Hub.run()
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
@@ -31,7 +31,7 @@ func newHub() *Hub {
 	hub := Hub{
 		Register:   make(chan RegisterReq),
 		Unregister: make(chan *Client),
-		Broadcast:  make(chan protocol.Frame),
+		broadcast:  make(chan protocol.Frame),
 		Query:      make(chan func(*Hub)),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
@@ -64,7 +64,7 @@ func (h *Hub) run() {
 				log.Printf("could not build disconnect announcement for %s: %v", c.Name, err)
 			}
 			h.deliver(f)
-		case f := <-h.Broadcast:
+		case f := <-h.broadcast:
 			h.deliver(f)
 		case query := <-h.Query:
 			query(h)
@@ -92,6 +92,16 @@ func (h *Hub) register(c *Client) error {
 	case <-h.Done:
 		return ErrHubClosed
 	}
+}
+
+// Broadcast is for external callers only. Use deliver() for internal broadcasts
+func (h *Hub) Broadcast(f protocol.Frame) error {
+	select {
+	case h.broadcast <- f:
+	case <-h.Done:
+		return ErrHubClosed
+	}
+	return nil
 }
 
 func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {

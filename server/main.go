@@ -113,11 +113,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		newClient.leave(hub)
 		return
 	}
-	select {
-	case hub.Broadcast <- f:
-	case <-hub.Done:
-		return
-	}
+	hub.Broadcast(f)
 
 	go newClient.processClientOutQueue(hub)
 	go newClient.readClientInput(hub)

@@ -122,8 +122,8 @@ func TestCmdWhoDropsAStalledClient(t *testing.T) {
 	mustRegister(t, chatHub, stalled)
 
 	// Two broadcasts overrun Bob's one-frame buffer, so the hub drops him.
-	chatHub.Broadcast <- mustChatFrame(t, "Alice", "one")
-	chatHub.Broadcast <- mustChatFrame(t, "Alice", "two")
+	chatHub.Broadcast(mustChatFrame(t, "Alice", "one"))
+	chatHub.Broadcast(mustChatFrame(t, "Alice", "two"))
 
 	// Alice's own buffer now holds those broadcasts; clear them so her /who
 	// reply is the next frame out.
