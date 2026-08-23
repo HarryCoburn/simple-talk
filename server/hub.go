@@ -23,8 +23,13 @@ var (
 const messageFormat = "<%s> %s"
 const poseFormat = "%s %s"
 
+type registerReq struct {
+	client *Client
+	reply  chan error
+}
+
 type Hub struct {
-	register   chan RegisterReq    // Register a new client
+	register   chan registerReq    // Register a new client
 	unregister chan *Client        // Unregister a client
 	broadcast  chan protocol.Frame // Send a frame to all clients
 	tasks      chan func(*Hub)     // Run a closure inside Hub.run without disrupting serialization
@@ -38,7 +43,7 @@ type Hub struct {
 // Create a new hub
 func newHub(v string) *Hub {
 	hub := Hub{
-		register:   make(chan RegisterReq),
+		register:   make(chan registerReq),
 		unregister: make(chan *Client),
 		broadcast:  make(chan protocol.Frame),
 		tasks:      make(chan func(*Hub)),
@@ -120,7 +125,7 @@ func (h *Hub) Register(c *Client) error {
 	// Buffering
 	ch := make(chan error, 1)
 	select {
-	case h.register <- RegisterReq{client: c, reply: ch}:
+	case h.register <- registerReq{client: c, reply: ch}:
 	case <-h.done:
 		return ErrHubClosed
 	}

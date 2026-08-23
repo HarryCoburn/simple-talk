@@ -15,11 +15,6 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
-type RegisterReq struct {
-	client *Client
-	reply  chan error
-}
-
 const serverVersion string = "0.0.1"
 
 // Run starts the server and blocks until an interrupt or SIGTERM

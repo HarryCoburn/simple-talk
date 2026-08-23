@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	MaxFrameSize     = 8192
+	MaxFrameSize     = 8192 // This also includes the delimiters and decoration
 	maxDiscardSize   = MaxFrameSize * 2
 	HandshakeTimeout = (time.Second * 30)
 )
