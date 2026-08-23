@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"slices"
+	"sync"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
@@ -21,8 +22,9 @@ type Hub struct {
 	unregister chan *Client         // Unregister a client
 	broadcast  chan protocol.Frame  // Send a frame to all clients
 	query      chan func(*Hub)      // Run a read-only query inside Hub.run()
-	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
-	Finished   chan struct{}        // Signal the hub is completely closed.
+	done       chan struct{}        // Signal we're done with the hub. Begin teardown.
+	finished   chan struct{}        // Signal the hub is completely closed.
+	stopOnce   sync.Once            // Guards against a second close
 	clientList map[*Client]struct{} // Map of all clients.
 }
 
@@ -33,8 +35,8 @@ func newHub() *Hub {
 		unregister: make(chan *Client),
 		broadcast:  make(chan protocol.Frame),
 		query:      make(chan func(*Hub)),
-		Done:       make(chan struct{}),
-		Finished:   make(chan struct{}),
+		done:       make(chan struct{}),
+		finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
 	}
 	return &hub
@@ -42,7 +44,7 @@ func newHub() *Hub {
 
 // Start the hub
 func (h *Hub) run() {
-	defer close(h.Finished)
+	defer close(h.finished)
 
 	for {
 		select {
@@ -68,7 +70,7 @@ func (h *Hub) run() {
 			h.deliver(f)
 		case query := <-h.query:
 			query(h)
-		case <-h.Done:
+		case <-h.done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
 			for c := range h.clientList {
 				h.closeClient(c)
@@ -78,19 +80,34 @@ func (h *Hub) run() {
 	}
 }
 
+// Stop signals the hub to begin a teardown. Stop does not wait. Pair with Wait if you need that.
+func (h *Hub) Stop() {
+	h.stopOnce.Do(func() { close(h.done) })
+}
+
+// Wait blocks until run() has torn the hub down. Only returns if run() was started and Stop was called
+func (h *Hub) Wait() {
+	<-h.finished
+}
+
+// Done reports hub shutdown to outside parties.
+func (h *Hub) Done() <-chan struct{} {
+	return h.done
+}
+
 // Channel Calls
 func (h *Hub) Register(c *Client) error {
 	// Buffering
 	ch := make(chan error, 1)
 	select {
 	case h.register <- RegisterReq{client: c, reply: ch}:
-	case <-h.Done:
+	case <-h.done:
 		return ErrHubClosed
 	}
 	select {
 	case err := <-ch:
 		return err
-	case <-h.Done:
+	case <-h.done:
 		return ErrHubClosed
 	}
 }
@@ -98,7 +115,7 @@ func (h *Hub) Register(c *Client) error {
 func (h *Hub) Unregister(c *Client) {
 	select {
 	case h.unregister <- c:
-	case <-h.Done:
+	case <-h.done:
 	}
 }
 
@@ -106,7 +123,7 @@ func (h *Hub) Unregister(c *Client) {
 func (h *Hub) Broadcast(f protocol.Frame) error {
 	select {
 	case h.broadcast <- f:
-	case <-h.Done:
+	case <-h.done:
 		return ErrHubClosed
 	}
 	return nil
@@ -121,13 +138,13 @@ func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
 	var zero T
 	select {
 	case h.query <- req:
-	case <-h.Done:
+	case <-h.done:
 		return zero, false
 	}
 	select {
 	case v := <-ch:
 		return v, true
-	case <-h.Done:
+	case <-h.done:
 		return zero, false
 	}
 }

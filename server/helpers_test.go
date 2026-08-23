@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net"
 	"slices"
-	"sync"
 	"testing"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
@@ -66,10 +65,9 @@ func newTestHub(t *testing.T) (*Hub, func()) {
 
 	// Start the chathub goroutine
 	go chatHub.run()
-	var once sync.Once
 	stop := func() {
-		once.Do(func() { close(chatHub.Done) })
-		<-chatHub.Finished
+		chatHub.Stop()
+		chatHub.Wait()
 	}
 	t.Cleanup(stop)
 	return chatHub, stop

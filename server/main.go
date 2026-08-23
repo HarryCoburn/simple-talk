@@ -41,7 +41,7 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 	stopped := make(chan struct{})
 	go hub.run()
 	go func() {
-		<-hub.Done
+		<-hub.Done()
 		ln.Close()
 	}()
 	go acceptLoop(hub, ln, stopped)
@@ -54,9 +54,9 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 		log.Print("stopped accepting connections, shutting down")
 	}
 
-	close(hub.Done)
+	hub.Stop()
 	<-stopped
-	<-hub.Finished
+	hub.Wait()
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.

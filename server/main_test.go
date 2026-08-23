@@ -310,7 +310,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
-	close(chatHub.Done)
+	chatHub.Stop()
 	select {
 	case <-exited:
 		return
@@ -324,7 +324,7 @@ func TestDoneGuardsUnregister(t *testing.T) {
 	chatHub := newHub()
 	exited := make(chan struct{})
 	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
-	close(chatHub.Done)
+	chatHub.Stop()
 	testHelp.OutConn.Close()
 	select {
 	case <-exited:
@@ -500,7 +500,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
 	chatHub := newHub()
-	close(chatHub.Done)
+	chatHub.Stop()
 
 	go handleNewConn(chatHub, serverSide)
 	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
