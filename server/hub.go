@@ -32,7 +32,6 @@ type Hub struct {
 	finished   chan struct{}       // Signal the hub is completely closed.
 	stopOnce   sync.Once           // Guards against a second close
 	clientList map[string]*Client  // All clients, keyed by the folded form of their name.
-	version    string              // The protocol version this server speaks
 }
 
 // Create a new hub
@@ -45,7 +44,6 @@ func newHub(v string) *Hub {
 		done:       make(chan struct{}),
 		finished:   make(chan struct{}),
 		clientList: make(map[string]*Client),
-		version:    v,
 	}
 	return &hub
 }
