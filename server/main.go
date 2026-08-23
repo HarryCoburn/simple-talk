@@ -89,7 +89,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 	newClient := newClient(fullc, clientName)
 
-	if err := hub.register(newClient); err != nil {
+	if err := hub.Register(newClient); err != nil {
 		if errors.Is(err, ErrNameTaken) {
 			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
 				log.Printf("could not report taken name to %s: %v", clientName, sendErr)

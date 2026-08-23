@@ -102,7 +102,7 @@ func TestCmdWhoFollowsTheHubRoster(t *testing.T) {
 		t.Errorf("/who said %q after Bob joined, wanted %q", got, want)
 	}
 
-	chatHub.Unregister <- bob
+	chatHub.Unregister(bob)
 	// Bob leaving is announced to the room, so that frame is ahead of the reply
 	// in Alice's queue.
 	if got, want := systemText(t, nextReply(t, alice)), "Bob has disconnected."; got != want {

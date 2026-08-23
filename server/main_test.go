@@ -35,13 +35,13 @@ func TestDeregisterClient(t *testing.T) {
 
 	// Register, then deregister the client
 	mustRegister(t, chatHub, chatClient)
-	chatHub.Unregister <- chatClient
+	chatHub.Unregister(chatClient)
 
 	// Testing
 	wantRoster(t, chatHub)
 
 	// Try double deregistration
-	chatHub.Unregister <- chatClient
+	chatHub.Unregister(chatClient)
 	wantRoster(t, chatHub)
 }
 
@@ -52,14 +52,14 @@ func TestRegisterRejectsADuplicateName(t *testing.T) {
 	first := &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)}
 	mustRegister(t, chatHub, first)
 
-	err := chatHub.register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+	err := chatHub.Register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 	if !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Wanted ErrNameTaken for a second %q, got %v", "Harry", err)
 	}
 	wantRoster(t, chatHub, "Harry")
 
 	// The name frees up once its holder leaves.
-	chatHub.Unregister <- first
+	chatHub.Unregister(first)
 	mustRegister(t, chatHub, &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 }
 
@@ -75,7 +75,7 @@ func TestRegisterIsAtomicUnderRacingNames(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results <- chatHub.register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+			results <- chatHub.Register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 		}()
 	}
 	wg.Wait()
@@ -180,7 +180,7 @@ func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 
 	var got *Client
 	select {
-	case got = <-chatHub.Unregister:
+	case got = <-chatHub.unregister:
 	case <-time.After(time.Millisecond * 500):
 		t.Fatalf("A failed write did not unregister the client")
 	}
@@ -236,7 +236,7 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 		if got := chatText(t, result); got != "<test> Hello" {
 			t.Errorf("Did not receive correct response after an oversized frame: %q", got)
 		}
-	case <-chatHub.Unregister:
+	case <-chatHub.unregister:
 		t.Fatalf("Client was disconnected by a recoverable oversized frame")
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out waiting for a chat after an oversized frame")
@@ -261,7 +261,7 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 		if got := chatText(t, result); got != "<test> Hello" {
 			t.Errorf("Did not receive correct response after an unsupported kind: %q", got)
 		}
-	case <-chatHub.Unregister:
+	case <-chatHub.unregister:
 		t.Fatalf("Client was disconnected by an unsupported frame kind")
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out waiting for a chat after an unsupported kind")
@@ -275,7 +275,7 @@ func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp.OutConn.Close()
 	var got *Client
 	select {
-	case got = <-chatHub.Unregister:
+	case got = <-chatHub.unregister:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out trying to TestReadLoopUnregister")
 	}
@@ -291,7 +291,7 @@ func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 	testHelp.InConn.Close()
 	var got *Client
 	select {
-	case got = <-chatHub.Unregister:
+	case got = <-chatHub.unregister:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out trying to TestReadLoopClosingInChan")
 	}

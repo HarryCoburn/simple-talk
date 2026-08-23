@@ -56,7 +56,7 @@ func systemText(t *testing.T, f protocol.Frame) string {
 
 func mustRegister(t *testing.T, hub *Hub, c *Client) {
 	t.Helper()
-	if err := hub.register(c); err != nil {
+	if err := hub.Register(c); err != nil {
 		t.Fatalf("Could not register %q: %v", c.Name, err)
 	}
 }

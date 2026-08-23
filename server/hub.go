@@ -17,10 +17,10 @@ const messageFormat = "<%s> %s"
 const poseFormat = "%s %s"
 
 type Hub struct {
-	Register   chan RegisterReq     // Register a new client
-	Unregister chan *Client         // Unregister a client
+	register   chan RegisterReq     // Register a new client
+	unregister chan *Client         // Unregister a client
 	broadcast  chan protocol.Frame  // Send a frame to all clients
-	Query      chan func(*Hub)      // Run a read-only query inside Hub.run()
+	query      chan func(*Hub)      // Run a read-only query inside Hub.run()
 	Done       chan struct{}        // Signal we're done with the hub. Begin teardown.
 	Finished   chan struct{}        // Signal the hub is completely closed.
 	clientList map[*Client]struct{} // Map of all clients.
@@ -29,10 +29,10 @@ type Hub struct {
 // Create a new hub
 func newHub() *Hub {
 	hub := Hub{
-		Register:   make(chan RegisterReq),
-		Unregister: make(chan *Client),
+		register:   make(chan RegisterReq),
+		unregister: make(chan *Client),
 		broadcast:  make(chan protocol.Frame),
-		Query:      make(chan func(*Hub)),
+		query:      make(chan func(*Hub)),
 		Done:       make(chan struct{}),
 		Finished:   make(chan struct{}),
 		clientList: make(map[*Client]struct{}),
@@ -46,7 +46,7 @@ func (h *Hub) run() {
 
 	for {
 		select {
-		case req := <-h.Register:
+		case req := <-h.register:
 			// must check the name and insert in the same loop call
 			if h.nameInUse(req.client.Name) {
 				req.reply <- ErrNameTaken
@@ -54,7 +54,7 @@ func (h *Hub) run() {
 			}
 			h.clientList[req.client] = struct{}{}
 			req.reply <- nil
-		case c := <-h.Unregister:
+		case c := <-h.unregister:
 			if _, ok := h.clientList[c]; !ok {
 				continue // Client is already unregistered.
 			}
@@ -66,7 +66,7 @@ func (h *Hub) run() {
 			h.deliver(f)
 		case f := <-h.broadcast:
 			h.deliver(f)
-		case query := <-h.Query:
+		case query := <-h.query:
 			query(h)
 		case <-h.Done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
@@ -78,11 +78,12 @@ func (h *Hub) run() {
 	}
 }
 
-func (h *Hub) register(c *Client) error {
+// Channel Calls
+func (h *Hub) Register(c *Client) error {
 	// Buffering
 	ch := make(chan error, 1)
 	select {
-	case h.Register <- RegisterReq{client: c, reply: ch}:
+	case h.register <- RegisterReq{client: c, reply: ch}:
 	case <-h.Done:
 		return ErrHubClosed
 	}
@@ -91,6 +92,13 @@ func (h *Hub) register(c *Client) error {
 		return err
 	case <-h.Done:
 		return ErrHubClosed
+	}
+}
+
+func (h *Hub) Unregister(c *Client) {
+	select {
+	case h.unregister <- c:
+	case <-h.Done:
 	}
 }
 
@@ -104,13 +112,15 @@ func (h *Hub) Broadcast(f protocol.Frame) error {
 	return nil
 }
 
+// Internal hub processes
+
 func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
 	ch := make(chan T, 1)
 	req := func(h *Hub) { ch <- fn(h) }
 
 	var zero T
 	select {
-	case h.Query <- req:
+	case h.query <- req:
 	case <-h.Done:
 		return zero, false
 	}

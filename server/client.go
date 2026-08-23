@@ -89,10 +89,7 @@ func (c *Client) readClientInput(hub *Hub) {
 }
 
 func (c *Client) leave(hub *Hub) {
-	select {
-	case hub.Unregister <- c:
-	case <-hub.Done:
-	}
+	hub.Unregister(c)
 }
 
 func decorateChat(sender string, f protocol.Frame) (protocol.Frame, error) {
