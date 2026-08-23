@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -826,6 +827,76 @@ func TestRegisterRejectsANameTakenInAnotherCase(t *testing.T) {
 	second := &Client{Name: "harry", Out: make(chan protocol.Frame, 8)}
 	if err := chatHub.Register(second); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Registering %q against %q returned %v, wanted %v", "harry", "Harry", err, ErrNameTaken)
+	}
+}
+
+// Both of a client's goroutines can call leave, so the hub can see the same
+// client twice. If the user reconnects under that name in between, the stale
+// leave must not tear the new client down: the folded name is the map key, but
+// it is not a unique handle for a client across a reconnect.
+func TestAStaleUnregisterLeavesAReconnectedClientAlone(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+
+	first := joinRoom(t, chatHub, "Alice")
+	chatHub.Unregister(first)
+
+	// Register blocks on the hub's reply, so by the time it returns the
+	// unregister ahead of it has already been handled.
+	second := joinRoom(t, chatHub, "Alice")
+
+	// The second leave for the client that is already gone.
+	chatHub.Unregister(first)
+
+	names, err := chatHub.clientNames()
+	if err != nil {
+		t.Fatalf("The hub did not survive a stale unregister: %v", err)
+	}
+	if !slices.Equal(names, []string{"Alice"}) {
+		t.Fatalf("The roster is %v, wanted the reconnected Alice still on it", names)
+	}
+
+	// Still a live member of the room, not a half closed one.
+	if err := chatHub.sendTo(second, mustChatFrame(t, "bob", "hello")); err != nil {
+		t.Fatalf("Could not send to the reconnected client: %v", err)
+	}
+	if got := chatText(t, nextReply(t, second)); got != "hello" {
+		t.Errorf("The reconnected client received %q, wanted %q", got, "hello")
+	}
+}
+
+// A client that has left is not delivered to just because someone else now
+// holds its name.
+func TestABroadcastSkipsAClientReplacedByAReconnect(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+
+	first := joinRoom(t, chatHub, "Alice")
+	chatHub.Unregister(first)
+	second := joinRoom(t, chatHub, "Alice")
+
+	if err := chatHub.Broadcast(mustChatFrame(t, "bob", "hello")); err != nil {
+		t.Fatalf("Could not broadcast: %v", err)
+	}
+	if got := chatText(t, nextReply(t, second)); got != "hello" {
+		t.Errorf("The reconnected client received %q, wanted %q", got, "hello")
+	}
+	if _, stillOpen := <-first.Out; stillOpen {
+		t.Error("The departed client was delivered to, wanted its queue closed and empty")
+	}
+}
+
+// Names are stored folded so they can be matched case insensitively, but the
+// roster shows them the way the user typed them.
+func TestTheRosterShowsNamesAsTyped(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+	joinRoom(t, chatHub, "Alice")
+	joinRoom(t, chatHub, "BOB")
+
+	names, err := chatHub.clientNames()
+	if err != nil {
+		t.Fatalf("clientNames returned an unexpected error: %v", err)
+	}
+	if !slices.Equal(names, []string{"Alice", "BOB"}) {
+		t.Errorf("The roster is %v, wanted the names as typed", names)
 	}
 }
 
