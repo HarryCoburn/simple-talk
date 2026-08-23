@@ -13,6 +13,11 @@ import (
 var (
 	ErrNameTaken = errors.New("that name is already taken")
 	ErrHubClosed = errors.New("server is shutting down")
+
+	// ErrVersionMismatch marks a handshake the server cannot honour because the
+	// client speaks a different version. It is reported to the client rather
+	// than logged and dropped: only the client can act on it.
+	ErrVersionMismatch = errors.New("client and server versions do not match")
 )
 
 const messageFormat = "<%s> %s"
@@ -27,7 +32,7 @@ type Hub struct {
 	finished   chan struct{}        // Signal the hub is completely closed.
 	stopOnce   sync.Once            // Guards against a second close
 	clientList map[*Client]struct{} // Map of all clients.
-	version    string               // Server string number
+	version    string               // The protocol version this server speaks
 }
 
 // Create a new hub

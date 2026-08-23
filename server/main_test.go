@@ -712,7 +712,7 @@ func TestVerifyNameRejectsBadNames(t *testing.T) {
 
 			go func() { peer.SendHandshake(tc.name, serverVersion) }()
 
-			got, err := verifyName(server)
+			got, err := verifyName(server, serverVersion)
 			if err == nil {
 				t.Fatalf("verifyName accepted %q as %q, wanted a rejection", tc.name, got)
 			}
@@ -740,14 +740,30 @@ func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
 
 			go func() { peer.SendHandshake("Harry", tc.version) }()
 
-			got, err := verifyName(server)
+			got, err := verifyName(server, serverVersion)
 			if err == nil {
 				t.Fatalf("verifyName accepted version %q as %q, wanted a rejection", tc.version, got)
 			}
-			if !strings.Contains(err.Error(), "version") {
-				t.Errorf("verifyName rejected version %q with %v, wanted the reason to name the version", tc.version, err)
+			if !errors.Is(err, ErrVersionMismatch) {
+				t.Errorf("verifyName rejected version %q with %v, wanted %v", tc.version, err, ErrVersionMismatch)
 			}
 		})
+	}
+}
+
+// The version checked is the one the server was built with, not a constant
+// baked into the check, so a server running an older build turns away a client
+// on today's version.
+func TestVerifyNameChecksTheVersionItWasGiven(t *testing.T) {
+	in, out := net.Pipe()
+	t.Cleanup(func() { in.Close(); out.Close() })
+	server := protocol.NewConn(in)
+	peer := protocol.NewConn(out)
+
+	go func() { peer.SendHandshake("Harry", serverVersion) }()
+
+	if got, err := verifyName(server, "9.9.9"); !errors.Is(err, ErrVersionMismatch) {
+		t.Fatalf("verifyName returned %q, %v against a server on 9.9.9, wanted %v", got, err, ErrVersionMismatch)
 	}
 }
 
@@ -760,12 +776,44 @@ func TestVerifyNameAcceptsAMatchingVersion(t *testing.T) {
 
 	go func() { peer.SendHandshake("  Harry  ", serverVersion) }()
 
-	got, err := verifyName(server)
+	got, err := verifyName(server, serverVersion)
 	if err != nil {
 		t.Fatalf("verifyName rejected a matching version: %v", err)
 	}
 	if got != "Harry" {
 		t.Errorf("verifyName returned %q, wanted the cleaned %q", got, "Harry")
+	}
+}
+
+// A mismatched client is told why it was turned away rather than being dropped
+// on a bare EOF, and the reason names the version it needs to reach.
+func TestHandleNewConnReportsAVersionMismatch(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+	in, out := net.Pipe()
+	t.Cleanup(func() { in.Close(); out.Close() })
+	peer := protocol.NewConn(out)
+
+	go handleNewConn(chatHub, in)
+	go func() { peer.SendHandshake("Harry", "0.0.0") }()
+
+	f, err := peer.Recv()
+	if err != nil {
+		t.Fatalf("Wanted an error frame back before the hang up, got: %v", err)
+	}
+	if f.Kind != protocol.KindError {
+		t.Fatalf("Wanted a %q frame back, got %q", protocol.KindError, f.Kind)
+	}
+	var got protocol.Error
+	if err := json.Unmarshal(f.Payload, &got); err != nil {
+		t.Fatalf("Could not unpack the error payload: %v", err)
+	}
+	if !strings.Contains(got.Message, serverVersion) {
+		t.Errorf("The reason was %q, wanted it to name the server version %q", got.Message, serverVersion)
+	}
+
+	// The rejected client is hung up on rather than left half connected.
+	if _, err := peer.Recv(); err == nil {
+		t.Error("The connection stayed open after a version mismatch, wanted it closed")
 	}
 }
 

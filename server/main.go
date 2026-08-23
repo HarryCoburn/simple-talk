@@ -83,9 +83,17 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 func handleNewConn(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the client
 	fullc := protocol.NewConn(conn)
-	clientName, err := verifyName(fullc)
+	clientName, err := verifyName(fullc, hub.version)
 	if err != nil {
 		log.Print(err)
+		// A version mismatch is the client's to fix, so tell it what happened
+		// instead of hanging up on a bare EOF. The client's own version is not
+		// echoed back: it is unvalidated input and would print to a terminal.
+		if errors.Is(err, ErrVersionMismatch) {
+			if sendErr := fullc.SendError(fmt.Sprintf("this server speaks version %s. Update your client.", hub.version)); sendErr != nil {
+				log.Printf("could not report the version mismatch: %v", sendErr)
+			}
+		}
 		fullc.Close()
 		return
 	}
@@ -126,7 +134,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	go newClient.readClientInput(hub)
 }
 
-func verifyName(fullc *protocol.Conn) (string, error) {
+func verifyName(fullc *protocol.Conn, version string) (string, error) {
 	// Get the frame for name entry.
 	fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout))
 	f, err := fullc.Recv()
@@ -145,8 +153,10 @@ func verifyName(fullc *protocol.Conn) (string, error) {
 		return "", fmt.Errorf("something wrong with the name payload: %w", err)
 	}
 
-	if hs.Version != serverVersion {
-		return "", fmt.Errorf("version mismatch between client and server. Client: %s, Server: %v", hs.Version, serverVersion)
+	// The version is settled before the name: there is no point validating a
+	// name for a client this server cannot talk to.
+	if hs.Version != version {
+		return "", fmt.Errorf("%w: client sent %q, server speaks %q", ErrVersionMismatch, hs.Version, version)
 	}
 
 	// The client validates too, for a faster prompt, but a hand-written client
