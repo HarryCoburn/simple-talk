@@ -112,12 +112,12 @@ func verifyName(fullc *protocol.Conn) (string, error) {
 
 	// Is it the right kind?
 	if f.Kind != protocol.KindHandshake {
-		return "", fmt.Errorf("wrong frame type sent in handshake! : %w", err)
+		return "", fmt.Errorf("wrong frame type sent in handshake! Received kind: %v", f.Kind)
 	}
 
 	var hs protocol.Handshake
 	if err := json.Unmarshal(f.Payload, &hs); err != nil {
-		return "", fmt.Errorf("something wrong with the name payload: %w", err)
+		return "", fmt.Errorf("something wrong with the name payload: %v", err)
 	}
 
 	return hs.Name, nil

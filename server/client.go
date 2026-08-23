@@ -78,7 +78,7 @@ func (c *Client) readClientInput(hub *Hub) {
 			}
 		case protocol.KindCommand:
 			if err := dispatchCommand(c, hub, frame); err != nil {
-				log.Printf("command from %s failed, %f", c.Name, err)
+				log.Printf("command from %s failed: %v", c.Name, err)
 			}
 		default:
 			log.Printf("ignoring unsupported frame kind %q from %s", frame.Kind, c.Name)
