@@ -29,8 +29,6 @@ Missing: no CI, no golangci-lint config, no Makefile. -- Hold until BubbleTea is
 
 Smells
 
-The server trusts client-side validation. cleanUserName lives only in client/main.go:180. verifyName (server/main.go:104) unmarshals hs.Name and returns it with no trimming, no length cap, no charset check, no empty check. A hand-written client can register as "", as 8KB of text, or as a name with control characters that corrupt other users' terminals. Uniqueness is also exact-match and case-sensitive, so Harry and harry coexist.
-
 Display formatting is baked into the wire payload. decorateChat renders "<alice> hi" into Chat.Text and the client prints that string verbatim. Flagged, not fixed, per your call — the cost is recorded in §4.
 
 Duplication: announceConnection / announceDisconnection are the same function with a different verb. RegisterReq is declared in main.go:14 but belongs with the hub.
@@ -43,14 +41,12 @@ MaxFrameSize is off by one in practice. bufio.NewReaderSize(c, MaxFrameSize) mus
 
 3. Is the architecture shape sensible?
 
-Yes. A single hub goroutine owning all shared state, reached only by channels, with two goroutines per client (one read, one write), is the standard Go chat design — the same shape as the gorilla/websocket chat example. It gives you freedom from mutexes over the client set, and the check-and-insert atomicity that TestRegisterIsAtomicUnderRacingNames verifies. Don't change it at this scale.
-
-The three-layer split is also right, and internal/protocol is the strongest part of the codebase: genuinely reusable, defensive about hostile input, with the desync recovery logic that most hobby implementations skip.
 
 Two shape-level reservations:
 
 The hub owns transport concerns it shouldn't. closeClient closes c.Out and c.Conn. The hub therefore knows about sockets, which is what makes it untestable without net.Pipe and what will make a second transport (WebSocket, TLS) invasive.
 No context.Context anywhere. The Done/Finished pair is a correct hand-rolled equivalent, but context composes with timeouts, cancellation, and every library you'll add later. For a learning project, hand-rolling it once was worth doing; converting is a natural next exercise.
+
 4. Where it breaks down as features are added
 
 Rooms / MUD (your stated direction) is the big one. clientList is one flat set and deliver means "everyone". Rooms require a Room type owning its own membership, with the hub demoted to a room registry. Doing this after commands, private messages, and history are built means rewriting all of them. This is the change to think about before the others.
