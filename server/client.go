@@ -17,6 +17,7 @@ type Client struct {
 	Conn *protocol.Conn      // The protocol connection
 	Name string              // The username of the Client
 	Out  chan protocol.Frame // The message channel queue
+	key  string              // The folded name this client is registered under. Set by the hub at registration.
 }
 
 func newClient(conn *protocol.Conn, name string) *Client {

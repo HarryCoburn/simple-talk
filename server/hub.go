@@ -31,7 +31,7 @@ type Hub struct {
 	done       chan struct{}       // Signal we're done with the hub. Begin teardown.
 	finished   chan struct{}       // Signal the hub is completely closed.
 	stopOnce   sync.Once           // Guards against a second close
-	clientList map[string]*Client  // Map of all clients keyed to the cleaned and folded username.
+	clientList map[string]*Client  // All clients, keyed by the folded form of their name.
 	version    string              // The protocol version this server speaks
 }
 
@@ -57,15 +57,27 @@ func (h *Hub) run() {
 	for {
 		select {
 		case req := <-h.register:
-			// must check the name and insert in the same loop call
-			if h.nameInUse(req.client.Name) {
+			// The name must be folded, checked and claimed in the same loop
+			// call, or two clients racing for one name could both find it free.
+			key, err := validate.NameKey(req.client.Name)
+			if err != nil {
+				// A name that will not fold cannot be held: it could not be
+				// matched against later.
 				req.reply <- ErrNameTaken
 				continue
 			}
-			h.clientList[req.client.Name] = req.client
+			if _, taken := h.clientList[key]; taken {
+				req.reply <- ErrNameTaken
+				continue
+			}
+			// The key belongs to the client from here on: every later lookup
+			// uses it, so it must not be recomputed from a name that could
+			// have moved on.
+			req.client.key = key
+			h.clientList[key] = req.client
 			req.reply <- nil
 		case c := <-h.unregister:
-			if _, ok := h.clientList[c.Name]; !ok {
+			if !h.registered(c) {
 				continue // Client is already unregistered.
 			}
 			h.closeClient(c)
@@ -80,8 +92,8 @@ func (h *Hub) run() {
 			task(h)
 		case <-h.done:
 			// Start teardown by closing all clients. h.Finished will signal the rest.
-			for c := range h.clientList {
-				h.closeClient(h.clientList[c])
+			for _, c := range h.clientList {
+				h.closeClient(c)
 			}
 			return
 		}
@@ -176,8 +188,10 @@ func exec(h *Hub, fn func(*Hub)) bool {
 func (h *Hub) clientNames() ([]string, error) {
 	names, ok := query(h, func(h *Hub) []string {
 		names := make([]string, 0, len(h.clientList))
-		for c := range h.clientList {
-			names = append(names, c)
+		for _, c := range h.clientList {
+			// The roster shows the name as the user typed it, not the folded
+			// key it is stored under.
+			names = append(names, c.Name)
 		}
 		slices.Sort(names)
 		return names
@@ -188,32 +202,25 @@ func (h *Hub) clientNames() ([]string, error) {
 	return names, nil
 }
 
-func (h *Hub) nameInUse(name string) bool {
-	key, err := validate.NameKey(name)
-	if err != nil {
-		return true
-	}
-	for c := range h.clientList {
-		ck, err := validate.NameKey(c)
-		if err != nil {
-			continue // Registered names were validated, so this should not happen.
-		}
-		if ck == key {
-			return true
-		}
-	}
-	return false
+// registered reports whether this exact client is the one currently holding its
+// key. A name is not a unique handle across a reconnect: both of a client's
+// goroutines can call leave, and if the user reconnects under the same name
+// between the two, the stale leave would otherwise find the new client's entry
+// and tear it down.
+func (h *Hub) registered(c *Client) bool {
+	current, ok := h.clientList[c.key]
+	return ok && current == c
 }
 
 func (h *Hub) closeClient(c *Client) {
-	if _, ok := h.clientList[c.Name]; !ok {
+	if !h.registered(c) {
 		return
 	}
 	close(c.Out)
 	if c.Conn != nil {
 		c.Conn.Close()
 	}
-	delete(h.clientList, c.Name)
+	delete(h.clientList, c.key)
 }
 
 // sendTo queues a frame for a single client. Because deliverTo can drop a client whose
@@ -229,7 +236,7 @@ func (h *Hub) sendTo(c *Client, f protocol.Frame) error {
 
 // deliverTo queues one frame for one client in the hub goroutine.
 func (h *Hub) deliverTo(c *Client, f protocol.Frame) {
-	if _, ok := h.clientList[c.Name]; !ok {
+	if !h.registered(c) {
 		return // already gone
 	}
 	select {

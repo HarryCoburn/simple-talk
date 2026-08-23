@@ -53,7 +53,7 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 - [X] **Version field** on `Frame` or `Handshake` (`internal/protocol/protocol.go:18`). Nearly free
       today; painful once anyone else runs the client. Cheapest high-value item on this list.
-- [ ] **Key `clientList` by folded name.** `nameInUse` (`server/hub.go:184`) linearly scans the map
+- [X] **Key `clientList` by folded name.** `nameInUse` (`server/hub.go:184`) linearly scans the map
       *and* runs `validate.NameKey` per client per registration — so a reconnect storm is O(N²) with
       a PRECIS pass inside the loop. Keying by the folded name kills the scan and is exactly the
       lookup private messages (`/msg bob hi`) will need.
