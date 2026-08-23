@@ -10,12 +10,27 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
+// commandHub is the slice of the hub a command handler may touch: reply to the
+// caller, speak to the room, read the roster. Nothing else. Handlers hold this
+// rather than the *Hub so they cannot reach query, exec or clientList.
+//
+// Every method here is a round trip through the hub goroutine, so a handler must
+// run on the caller's own goroutine and never inside Hub.run. dispatchCommand is
+// called from readClientInput, which is what makes that true today.
+type commandHub interface {
+	sendTo(c *Client, f protocol.Frame) error
+	clientNames() ([]string, error)
+	Broadcast(f protocol.Frame) error
+}
+
+var _ commandHub = (*Hub)(nil)
+
 // cmdCtx is everything a command handler is allowed to touch.
 type cmdCtx struct {
-	client *Client  // Who ran the command.
-	hub    *Hub     // For queries and for replying.
-	args   []string // Everything after the command word.
-	roster []string // Sorted command names. For /help command to avoid circular dependency
+	client *Client    // Who ran the command.
+	hub    commandHub // For queries and for replying.
+	args   []string   // Everything after the command word.
+	roster []string   // Sorted command names. For /help command to avoid circular dependency
 }
 
 // A cmdHandler runs one command. Replies to the caller go through ctx.reply;
@@ -58,7 +73,11 @@ func (ctx cmdCtx) replyError(format string, a ...any) error {
 
 // dispatchCommand decodes a command frame and runs the matching handler.
 // An unknown command is reported to the caller and is not an error here.
-func dispatchCommand(c *Client, hub *Hub, f protocol.Frame) error {
+//
+// This runs on the caller's read goroutine. Every cmdCtx method blocks until the
+// hub goroutine services it, so a handler must never be invoked from inside
+// Hub.run.
+func dispatchCommand(c *Client, hub commandHub, f protocol.Frame) error {
 	var cmd protocol.Command
 	if err := json.Unmarshal(f.Payload, &cmd); err != nil {
 		return fmt.Errorf("dispatch command: %w", err)

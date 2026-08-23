@@ -10,8 +10,29 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
+// fakeHub stands in for the hub so a handler can be run against a roster the
+// live hub will not produce. Nothing here talks to a goroutine: the point of the
+// narrow interface is that a handler only needs these three answers.
+type fakeHub struct {
+	names    []string
+	namesErr error
+	sent     []protocol.Frame
+}
+
+func (f *fakeHub) sendTo(_ *Client, frame protocol.Frame) error {
+	f.sent = append(f.sent, frame)
+	return nil
+}
+
+func (f *fakeHub) clientNames() ([]string, error) { return f.names, f.namesErr }
+
+func (f *fakeHub) Broadcast(frame protocol.Frame) error {
+	f.sent = append(f.sent, frame)
+	return nil
+}
+
 // runCommand dispatches a command frame as if the client had sent it.
-func runCommand(t *testing.T, hub *Hub, c *Client, name string, args ...string) error {
+func runCommand(t *testing.T, hub commandHub, c *Client, name string, args ...string) error {
 	t.Helper()
 	f, err := protocol.NewCommandFrame(name, args)
 	if err != nil {
@@ -27,6 +48,38 @@ func who(t *testing.T, hub *Hub, c *Client) string {
 		t.Fatalf("/who returned an unexpected error: %v", err)
 	}
 	return systemText(t, nextReply(t, c))
+}
+
+// An empty roster is a real answer, not an error: the caller can be dropped
+// between issuing the command and the hub reading the list. A live hub always has
+// the caller on it, so this path needs a stand in hub to reach.
+func TestCmdWhoReportsAnEmptyRoster(t *testing.T) {
+	hub := &fakeHub{}
+	caller := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+
+	if err := runCommand(t, hub, caller, "who"); err != nil {
+		t.Fatalf("/who returned an unexpected error: %v", err)
+	}
+	if len(hub.sent) != 1 {
+		t.Fatalf("/who sent %d frames, wanted 1", len(hub.sent))
+	}
+	if got, want := systemText(t, hub.sent[0]), "Nobody is connected."; got != want {
+		t.Errorf("/who said %q, wanted %q", got, want)
+	}
+}
+
+// A roster the hub could not produce is reported, not answered with a misleading
+// empty room.
+func TestCmdWhoSurfacesARosterError(t *testing.T) {
+	hub := &fakeHub{namesErr: ErrHubClosed}
+	caller := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+
+	if err := runCommand(t, hub, caller, "who"); !errors.Is(err, ErrHubClosed) {
+		t.Fatalf("/who returned %v, wanted %v", err, ErrHubClosed)
+	}
+	if len(hub.sent) != 0 {
+		t.Errorf("/who sent %v, wanted nothing said to the caller", hub.sent)
+	}
 }
 
 // /who is how a user sees who is connected, and it reports the roster in sorted
