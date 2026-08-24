@@ -2,15 +2,6 @@
 
 ## Status
 
-Reviewed against `a9cbde0`. Since the last review the tree gained `internal/validate` (PRECIS-based
-name and message rules, enforced server-side), the `cmd/` + `internal/` layout, unexported hub
-channels behind methods, and graceful signal shutdown. Baseline is `gofmt -l .` clean, `go vet ./...`
-clean, and `go test ./...` passing for all five packages.
-
-Landed since the last review, and no longer listed below: server-side name validation, case-
-insensitive uniqueness (`validate.NameKey`), the `%f` verb bug, reporting the actual frame kind on a
-bad handshake, signal handling, `fmt.Println` → `log`, hub channel encapsulation, the `cmd/` split.
-
 Only one milestone is scheduled: TLS. Everything past it is unscheduled and lives under **Later**.
 
 ---
@@ -28,35 +19,10 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ---
 
-## P0 — defects, one sitting
-
-- [X] `unsuable` → `unusable`, twice: `server/client.go:54` and `internal/protocol/conn.go:23`. The
-      second one is in `ErrUnrecoverable`'s message, which reaches clients in an error frame.
-- [X] `server/commands.go:23` — the comment says the table is "Populated in `init()`". It is a
-      literal now; the comment is describing code that no longer exists.
-- [X] `commandNames` (`server/commands.go:31`) is a hand-maintained copy of the `commands` map keys.
-      Derive it from the map and sort it, so `/help` cannot drift from what dispatch accepts.
-- [X] Error-string style: lowercase, unpunctuated, since these get wrapped into longer sentences.
-      `server/main.go:138` ("wrong frame type sent in handshake! ...") and `client/handshake.go:46`
-      ("username failure.").
-- [X] `%v` → `%w` at the remaining wrap sites: `server/main.go:143`, `client/handshake.go:55`.
-- [X] The `sendLoop` comment at `client/main.go:17-19` overstates the behaviour. It claims the send
-      loop "stops once dead is closed, so a server-side disconnect doesn't leave it blocking on
-      input" — but `sendLoop` (`client/main.go:81`) checks `dead` only *after* `scan.Scan()` returns,
-      so a real terminal user still sits blocked until they press enter.
-      `TestSendLoopStopsOnceDeadIsClosed` (`client/main_test.go:346`) passes only because
-      `scannerOf` has input pre-buffered. Two honest fixes: read stdin on its own goroutine, or
-      accept the limitation and correct the comment. Either is fine; the current comment is not.
-
+## P0 — easy defects
 
 ## P1 — cheap now, expensive later
 
-- [X] **Version field** on `Frame` or `Handshake` (`internal/protocol/protocol.go:18`). Nearly free
-      today; painful once anyone else runs the client. Cheapest high-value item on this list.
-- [X] **Key `clientList` by folded name.** `nameInUse` (`server/hub.go:184`) linearly scans the map
-      *and* runs `validate.NameKey` per client per registration — so a reconnect storm is O(N²) with
-      a PRECIS pass inside the loop. Keying by the folded name kills the scan and is exactly the
-      lookup private messages (`/msg bob hi`) will need.
 - [ ] **Rewrite `docs/server.md`.** It has drifted badly: it documents a `NameTaken` channel that
       does not exist, describes `Query` as "only returns the length of the client list" (it is now
       the generic `tasks` channel with `submit`/`query`/`exec`), credits `Broadcast` with decorating
@@ -65,26 +31,13 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P2 — before the next big feature
 
-- [X] Give command handlers a narrow interface (reply / broadcast / roster) instead of `*Hub`.
-      `cmdCtx.hub` is now `commandHub` (`server/commands.go:13`), so a handler can no longer reach
-      `query`, `exec` or `clientList`. Its three methods still round-trip through the hub goroutine,
-      which no interface can express, so the invariant that handlers run on the caller's read
-      goroutine is written down on the interface, on `dispatchCommand`, and on `run`'s `tasks` arm.
-- [X] `recover()` per client goroutine. `Client.guard` (`server/client.go:40`) is deferred at the
-      top of both of a client's goroutines: a panic drops that one client and is logged with its
-      stack, instead of unwinding past main. The hub goroutine is still unguarded — a panic in
-      `Hub.run` remains fatal, and closing that gap needs its own decision about what a half torn
-      down hub should do.
-- [X] Move `RegisterReq` (`server/main.go:18`) into `hub.go` and unexport it — it is hub internals.
 - [ ] Fold `announceConnection` / `announceDisconnection` (`server/main.go:155,164`) into one helper;
       they differ only in a verb.
-- [X] Document the `MaxFrameSize` off-by-one. `bufio.NewReaderSize(c, MaxFrameSize)`
-      (`internal/protocol/conn.go:15,37`) must hold the delimiter too, so the largest accepted line
-      is 8191 bytes, not the documented 8192.
 - [ ] Note `/who` costs two hub round-trips (`clientNames`, then `reply`).
 
 ## Later — unscheduled
 
+- **Connection/port string for client and server to start testing outside localhost**
 - **BubbleTea conversion.**
 - **Rooms / MUD.** `clientList` is one flat set and `deliver` means "everyone". Rooms need a `Room`
   type owning its own membership with the hub demoted to a room registry. If this direction is ever
