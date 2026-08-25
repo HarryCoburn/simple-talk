@@ -20,7 +20,7 @@ import (
 type commandHub interface {
 	sendTo(c *Client, f protocol.Frame) error
 	clientNames() ([]string, error)
-	Broadcast(f protocol.Frame) error
+	broadcastFrame(f protocol.Frame) error
 }
 
 var _ commandHub = (*Hub)(nil)
@@ -34,7 +34,7 @@ type cmdCtx struct {
 }
 
 // A cmdHandler runs one command. Replies to the caller go through ctx.reply;
-// anything the whole room should see goes to hub.Broadcast.
+// anything the whole room should see goes to hub.broadcastFrame.
 type cmdHandler func(ctx cmdCtx) error
 
 // The command table. Names are lowercase and carry no leading slash — the

@@ -262,7 +262,7 @@ func TestReadLoopSurvivesAPanickingHandler(t *testing.T) {
 	wantRoster(t, chatHub, "Bob")
 
 	// Bob is untouched: the room still delivers.
-	if err := chatHub.Broadcast(mustChatFrame(t, "Bob", "still here")); err != nil {
+	if err := chatHub.broadcastFrame(mustChatFrame(t, "Bob", "still here")); err != nil {
 		t.Fatalf("Could not broadcast after the panic: %v", err)
 	}
 	if got := chatText(t, nextReply(t, bystander)); got != "still here" {

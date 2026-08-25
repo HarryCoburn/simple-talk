@@ -26,7 +26,7 @@ func (f *fakeHub) sendTo(_ *Client, frame protocol.Frame) error {
 
 func (f *fakeHub) clientNames() ([]string, error) { return f.names, f.namesErr }
 
-func (f *fakeHub) Broadcast(frame protocol.Frame) error {
+func (f *fakeHub) broadcastFrame(frame protocol.Frame) error {
 	f.sent = append(f.sent, frame)
 	return nil
 }
@@ -110,7 +110,7 @@ func TestCmdWhoFollowsTheHubRoster(t *testing.T) {
 		t.Errorf("/who said %q after Bob joined, wanted %q", got, want)
 	}
 
-	chatHub.Unregister(bob)
+	chatHub.unregisterClient(bob)
 	// Bob leaving is announced to the room, so that frame is ahead of the reply
 	// in Alice's queue.
 	if got, want := systemText(t, nextReply(t, alice)), "Bob has disconnected."; got != want {
@@ -130,8 +130,8 @@ func TestCmdWhoDropsAStalledClient(t *testing.T) {
 	mustRegister(t, chatHub, stalled)
 
 	// Two broadcasts overrun Bob's one-frame buffer, so the hub drops him.
-	chatHub.Broadcast(mustChatFrame(t, "Alice", "one"))
-	chatHub.Broadcast(mustChatFrame(t, "Alice", "two"))
+	chatHub.broadcastFrame(mustChatFrame(t, "Alice", "one"))
+	chatHub.broadcastFrame(mustChatFrame(t, "Alice", "two"))
 
 	// Alice's own buffer now holds those broadcasts; clear them so her /who
 	// reply is the next frame out.

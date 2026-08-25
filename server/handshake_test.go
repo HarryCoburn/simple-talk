@@ -20,7 +20,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
 	chatHub := newHub(serverVersion)
-	chatHub.Stop()
+	chatHub.stop()
 
 	go handleNewConn(chatHub, serverSide)
 	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {

@@ -39,7 +39,7 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 	stopped := make(chan struct{})
 	go hub.run()
 	go func() {
-		<-hub.Done()
+		<-hub.doneChan()
 		ln.Close()
 	}()
 	go acceptLoop(hub, ln, stopped)
@@ -52,9 +52,9 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 		log.Print("stopped accepting connections, shutting down")
 	}
 
-	hub.Stop()
+	hub.stop()
 	<-stopped
-	hub.Wait()
+	hub.wait()
 }
 
 // Listen for incoming client connections, create them, then start a goroutine to handle them.
@@ -95,7 +95,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 	newClient := newClient(fullc, clientName)
 
-	if err := hub.Register(newClient); err != nil {
+	if err := hub.registerClient(newClient); err != nil {
 		if errors.Is(err, ErrNameTaken) {
 			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
 				log.Printf("could not report taken name to %s: %v", clientName, sendErr)
@@ -119,7 +119,7 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		newClient.leave(hub)
 		return
 	}
-	if err := hub.Broadcast(f); err != nil {
+	if err := hub.broadcastFrame(f); err != nil {
 		log.Printf("could not announce %s: %v", newClient.Name, err)
 		newClient.leave(hub)
 		return
