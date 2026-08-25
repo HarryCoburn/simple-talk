@@ -16,7 +16,7 @@ import (
 
 // Contains helper functions for testing.
 type testHelper struct {
-	Client  *Client        // server-side client
+	Session *Session       // the server-side session
 	Peer    *protocol.Conn // Far side of the pipe
 	InConn  net.Conn
 	OutConn net.Conn
@@ -58,9 +58,9 @@ func systemText(t *testing.T, f protocol.Frame) string {
 	return chat.Text
 }
 
-func mustRegister(t *testing.T, hub *Hub, c *Client) {
+func mustRegister(t *testing.T, hub *Hub, c *Session) {
 	t.Helper()
-	if err := hub.registerClient(c); err != nil {
+	if err := hub.registerSession(c); err != nil {
 		t.Fatalf("Could not register %q: %v", c.Name, err)
 	}
 }
@@ -81,7 +81,7 @@ func newTestHub(t *testing.T) (*Hub, func()) {
 func setUpTest(t *testing.T) testHelper {
 	in, out := net.Pipe()
 	conn := protocol.NewConn(in)
-	chatClient := newClient(conn, "test")
+	chatSession := newSession(conn, "test")
 	peer := protocol.NewConn(out)
 	t.Cleanup(func() {
 		out.Close()
@@ -89,18 +89,18 @@ func setUpTest(t *testing.T) testHelper {
 		conn.Close()
 	})
 	return testHelper{
-		Client:  chatClient,
+		Session: chatSession,
 		Peer:    peer,
 		InConn:  in,
 		OutConn: out}
 }
 
-// wantRoster checks exactly who the hub is holding. clientNames is the accessor
+// wantRoster checks exactly who the hub is holding. sessionNames is the accessor
 // the /who command reads, so this asserts the same hub state a user would see,
 // and it reports names rather than a bare count so a failure says who is there.
 func wantRoster(t *testing.T, h *Hub, want ...string) {
 	t.Helper()
-	got, err := h.clientNames()
+	got, err := h.sessionNames()
 	if err != nil {
 		t.Fatalf("Could not read the roster: %v", err)
 	}
@@ -115,7 +115,7 @@ func wantRoster(t *testing.T, h *Hub, want ...string) {
 
 // nextReply takes the one frame a command queued for its caller. Replies are
 // delivered through the hub, so the caller has to be registered to receive one.
-func nextReply(t *testing.T, c *Client) protocol.Frame {
+func nextReply(t *testing.T, c *Session) protocol.Frame {
 	t.Helper()
 	select {
 	case f := <-c.Out:
@@ -126,8 +126,8 @@ func nextReply(t *testing.T, c *Client) protocol.Frame {
 	}
 }
 
-// wantNoReply checks that nothing was queued for a client.
-func wantNoReply(t *testing.T, c *Client) {
+// wantNoReply checks that nothing was queued for a session.
+func wantNoReply(t *testing.T, c *Session) {
 	t.Helper()
 	select {
 	case f := <-c.Out:
@@ -149,11 +149,11 @@ func errorText(t *testing.T, f protocol.Frame) string {
 	return e.Message
 }
 
-// joinRoom registers a client under the given name and returns it. The Out
+// joinRoom registers a session under the given name and returns it. The Out
 // buffer is roomy so a queued reply never trips the drop-a-stalled-client path.
-func joinRoom(t *testing.T, hub *Hub, name string) *Client {
+func joinRoom(t *testing.T, hub *Hub, name string) *Session {
 	t.Helper()
-	c := &Client{Name: name, Out: make(chan protocol.Frame, 8)}
+	c := &Session{Name: name, Out: make(chan protocol.Frame, 8)}
 	mustRegister(t, hub, c)
 	return c
 }

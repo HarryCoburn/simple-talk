@@ -19,7 +19,7 @@ func TestRegisterClient(t *testing.T) {
 	wantRoster(t, chatHub)
 
 	// Register a client
-	mustRegister(t, chatHub, &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)})
+	mustRegister(t, chatHub, &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)})
 
 	wantRoster(t, chatHub, "Alice")
 }
@@ -28,17 +28,17 @@ func TestDeregisterClient(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	// Make a client
-	chatClient := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	chatClient := &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)}
 
 	// Register, then deregister the client
 	mustRegister(t, chatHub, chatClient)
-	chatHub.unregisterClient(chatClient)
+	chatHub.unregisterSession(chatClient)
 
 	// Testing
 	wantRoster(t, chatHub)
 
 	// Try double deregistration
-	chatHub.unregisterClient(chatClient)
+	chatHub.unregisterSession(chatClient)
 	wantRoster(t, chatHub)
 }
 
@@ -46,18 +46,18 @@ func TestDeregisterClient(t *testing.T) {
 // claimed once no matter how the registrations interleave.
 func TestRegisterRejectsADuplicateName(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	first := &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)}
+	first := &Session{Name: "Harry", Out: make(chan protocol.Frame, 1)}
 	mustRegister(t, chatHub, first)
 
-	err := chatHub.registerClient(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+	err := chatHub.registerSession(&Session{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 	if !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Wanted ErrNameTaken for a second %q, got %v", "Harry", err)
 	}
 	wantRoster(t, chatHub, "Harry")
 
 	// The name frees up once its holder leaves.
-	chatHub.unregisterClient(first)
-	mustRegister(t, chatHub, &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+	chatHub.unregisterSession(first)
+	mustRegister(t, chatHub, &Session{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 }
 
 // Racing registrations must not both win. Without an atomic check-and-insert
@@ -72,7 +72,7 @@ func TestRegisterIsAtomicUnderRacingNames(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results <- chatHub.registerClient(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+			results <- chatHub.registerSession(&Session{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 		}()
 	}
 	wg.Wait()
@@ -97,8 +97,8 @@ func TestRegisterIsAtomicUnderRacingNames(t *testing.T) {
 // Test if broadcasting works to connected clients
 func TestBroadcast(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	client1 := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
-	client2 := &Client{Name: "Bob", Out: make(chan protocol.Frame, 1)}
+	client1 := &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	client2 := &Session{Name: "Bob", Out: make(chan protocol.Frame, 1)}
 
 	f := mustChatFrame(t, "Alice", "Test")
 	mustRegister(t, chatHub, client1)
@@ -128,12 +128,12 @@ func TestBroadcast(t *testing.T) {
 
 func TestDroppedClientPath(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	client := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
+	client := &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)} // Make a channel with a tiny buffer
 	mustRegister(t, chatHub, client)
 	frame1 := mustChatFrame(t, "Alice", "Test")
 	frame2 := mustChatFrame(t, "Alice", "Received")
 	chatHub.broadcastFrame(frame1) // Fill buffer
-	chatHub.broadcastFrame(frame2) // Overload Client.Out, which should force server to drop the client.
+	chatHub.broadcastFrame(frame2) // Overload Session.Out, which should force server to drop the client.
 
 	wantRoster(t, chatHub)
 
@@ -143,8 +143,8 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
 	exited := make(chan struct{})
-	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
-	// Nothing is draining chatHub.Broadcast, so readClientInput parks in the
+	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
+	// Nothing is draining chatHub.Broadcast, so readInput parks in the
 	// send select until Done releases it.
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
@@ -154,7 +154,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	case <-exited:
 		return
 	case <-time.After(time.Millisecond * 100):
-		t.Fatalf("Sending to Done channel did not close Client")
+		t.Fatalf("Sending to Done channel did not close Session")
 	}
 }
 
@@ -162,29 +162,29 @@ func TestDoneGuardsUnregister(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
 	exited := make(chan struct{})
-	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
+	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
 	chatHub.stop()
 	testHelp.OutConn.Close()
 	select {
 	case <-exited:
 	case <-time.After(time.Millisecond * 100):
-		t.Fatalf("Sending to Done channel did not close Client")
+		t.Fatalf("Sending to Done channel did not close Session")
 	}
 }
 
 func TestTeardownCascade(t *testing.T) {
 	alice := setUpTest(t)
-	alice.Client.Name = "Alice"
+	alice.Session.Name = "Alice"
 	bob := setUpTest(t)
-	bob.Client.Name = "Bob"
+	bob.Session.Name = "Bob"
 	chatHub, stop := newTestHub(t) // newTestHub() starts hub.run()
 
 	var wg sync.WaitGroup
-	for _, c := range []*Client{alice.Client, bob.Client} {
+	for _, c := range []*Session{alice.Session, bob.Session} {
 		mustRegister(t, chatHub, c)
 		wg.Add(2)
-		go func() { defer wg.Done(); c.processClientOutQueue(chatHub) }()
-		go func() { defer wg.Done(); c.readClientInput(chatHub) }()
+		go func() { defer wg.Done(); c.writeLoop(chatHub) }()
+		go func() { defer wg.Done(); c.readInput(chatHub) }()
 	}
 
 	allDone := make(chan struct{})
@@ -211,8 +211,8 @@ func TestRegisterRejectsANameTakenInAnotherCase(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	joinRoom(t, chatHub, "Harry")
 
-	second := &Client{Name: "harry", Out: make(chan protocol.Frame, 8)}
-	if err := chatHub.registerClient(second); !errors.Is(err, ErrNameTaken) {
+	second := &Session{Name: "harry", Out: make(chan protocol.Frame, 8)}
+	if err := chatHub.registerSession(second); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Registering %q against %q returned %v, wanted %v", "harry", "Harry", err, ErrNameTaken)
 	}
 }
@@ -225,16 +225,16 @@ func TestAStaleUnregisterLeavesAReconnectedClientAlone(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	first := joinRoom(t, chatHub, "Alice")
-	chatHub.unregisterClient(first)
+	chatHub.unregisterSession(first)
 
 	// Register blocks on the hub's reply, so by the time it returns the
 	// unregister ahead of it has already been handled.
 	second := joinRoom(t, chatHub, "Alice")
 
 	// The second leave for the client that is already gone.
-	chatHub.unregisterClient(first)
+	chatHub.unregisterSession(first)
 
-	names, err := chatHub.clientNames()
+	names, err := chatHub.sessionNames()
 	if err != nil {
 		t.Fatalf("The hub did not survive a stale unregister: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestABroadcastSkipsAClientReplacedByAReconnect(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	first := joinRoom(t, chatHub, "Alice")
-	chatHub.unregisterClient(first)
+	chatHub.unregisterSession(first)
 	second := joinRoom(t, chatHub, "Alice")
 
 	if err := chatHub.broadcastFrame(mustChatFrame(t, "bob", "hello")); err != nil {
@@ -278,9 +278,9 @@ func TestTheRosterShowsNamesAsTyped(t *testing.T) {
 	joinRoom(t, chatHub, "Alice")
 	joinRoom(t, chatHub, "BOB")
 
-	names, err := chatHub.clientNames()
+	names, err := chatHub.sessionNames()
 	if err != nil {
-		t.Fatalf("clientNames returned an unexpected error: %v", err)
+		t.Fatalf("sessionNames returned an unexpected error: %v", err)
 	}
 	if !slices.Equal(names, []string{"Alice", "BOB"}) {
 		t.Errorf("The roster is %v, wanted the names as typed", names)

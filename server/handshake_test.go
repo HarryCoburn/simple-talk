@@ -45,7 +45,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 // hanging up instead of dropping the connection silently.
 func TestHandleNewConnReportsATakenName(t *testing.T) {
 	chatHub, _ := newTestHub(t)
-	mustRegister(t, chatHub, &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+	mustRegister(t, chatHub, &Session{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 
 	serverSide, clientSide := net.Pipe()
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })

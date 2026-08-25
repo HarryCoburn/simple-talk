@@ -20,9 +20,9 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	in, out := net.Pipe()
 	t.Cleanup(func() { out.Close() })
 	fullc := protocol.NewConn(in)
-	chatClient := newClient(fullc, "Harry")
+	chatClient := newSession(fullc, "Harry")
 	chatHub := newHub(serverVersion)
-	go chatClient.processClientOutQueue(chatHub)
+	go chatClient.writeLoop(chatHub)
 	peer := protocol.NewConn(out)
 
 	chatClient.Out <- mustChatFrame(t, "Harry", "Hello")
@@ -32,7 +32,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 		t.Fatalf("Recv failure: %v", err)
 	}
 	if got := chatText(t, frame); got != "Hello" {
-		t.Errorf("Client sent Hello, Output pipe got %q", got)
+		t.Errorf("Session sent Hello, Output pipe got %q", got)
 	}
 
 	// Clsoing out stops the write loop but leaves socket alone.
@@ -46,27 +46,27 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
-	go testHelp.Client.processClientOutQueue(chatHub)
+	go testHelp.Session.writeLoop(chatHub)
 
 	// Break the socket so the next write fails.
 	testHelp.OutConn.Close()
-	testHelp.Client.Out <- mustChatFrame(t, "Harry", "Hello")
+	testHelp.Session.Out <- mustChatFrame(t, "Harry", "Hello")
 
-	var got *Client
+	var got *Session
 	select {
 	case got = <-chatHub.unregister:
 	case <-time.After(time.Millisecond * 500):
 		t.Fatalf("A failed write did not unregister the client")
 	}
-	if testHelp.Client != got {
-		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Client, got)
+	if testHelp.Session != got {
+		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Session, got)
 	}
 }
 
 func TestReadLoop(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
-	go testHelp.Client.readClientInput(chatHub)
+	go testHelp.Session.readInput(chatHub)
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestReadLoop(t *testing.T) {
 func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
-	go testHelp.Client.readClientInput(chatHub)
+	go testHelp.Session.readInput(chatHub)
 
 	// A frame past MaxFrameSize is recoverable: protocol.Conn resynchronizes on
 	// the trailing newline, so the session must stay alive.
@@ -111,7 +111,7 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 			t.Errorf("Did not receive correct response after an oversized frame: %q", got)
 		}
 	case <-chatHub.unregister:
-		t.Fatalf("Client was disconnected by a recoverable oversized frame")
+		t.Fatalf("Session was disconnected by a recoverable oversized frame")
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out waiting for a chat after an oversized frame")
 	}
@@ -120,7 +120,7 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
-	go testHelp.Client.readClientInput(chatHub)
+	go testHelp.Session.readInput(chatHub)
 
 	// A kind this server does not handle must not tear down the connection.
 	if err := testHelp.Peer.SendHandshake("test", serverVersion); err != nil {
@@ -136,7 +136,7 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 			t.Errorf("Did not receive correct response after an unsupported kind: %q", got)
 		}
 	case <-chatHub.unregister:
-		t.Fatalf("Client was disconnected by an unsupported frame kind")
+		t.Fatalf("Session was disconnected by an unsupported frame kind")
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out waiting for a chat after an unsupported kind")
 	}
@@ -145,32 +145,32 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
-	go testHelp.Client.readClientInput(chatHub)
+	go testHelp.Session.readInput(chatHub)
 	testHelp.OutConn.Close()
-	var got *Client
+	var got *Session
 	select {
 	case got = <-chatHub.unregister:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out trying to TestReadLoopUnregister")
 	}
-	if testHelp.Client != got {
-		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Client, got)
+	if testHelp.Session != got {
+		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Session, got)
 	}
 }
 
 func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(serverVersion)
-	go testHelp.Client.readClientInput(chatHub)
+	go testHelp.Session.readInput(chatHub)
 	testHelp.InConn.Close()
-	var got *Client
+	var got *Session
 	select {
 	case got = <-chatHub.unregister:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("Timed out trying to TestReadLoopClosingInChan")
 	}
-	if testHelp.Client != got {
-		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Client, got)
+	if testHelp.Session != got {
+		t.Errorf("Did not unregister the correct client. Sent %v, got %v", testHelp.Session, got)
 	}
 }
 
@@ -208,10 +208,10 @@ func TestDecoratedFrameFitsAFrame(t *testing.T) {
 // told, and nobody else sees a frame.
 func TestReadClientInputRejectsADisallowedMessage(t *testing.T) {
 	testHelp := setUpTest(t)
-	testHelp.Client.Name = "Alice"
+	testHelp.Session.Name = "Alice"
 	chatHub, _ := newTestHub(t)
-	mustRegister(t, chatHub, testHelp.Client)
-	go testHelp.Client.readClientInput(chatHub)
+	mustRegister(t, chatHub, testHelp.Session)
+	go testHelp.Session.readInput(chatHub)
 
 	if err := testHelp.Peer.SendChat("Alice", "clear\x1b[2J"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
@@ -225,7 +225,7 @@ func TestReadClientInputRejectsADisallowedMessage(t *testing.T) {
 		t.Fatalf("Wanted a %q frame back, got %q", protocol.KindError, f.Kind)
 	}
 	select {
-	case got := <-testHelp.Client.Out:
+	case got := <-testHelp.Session.Out:
 		t.Errorf("The room received %v, wanted nothing", got)
 	default:
 	}
@@ -245,11 +245,11 @@ func TestReadLoopSurvivesAPanickingHandler(t *testing.T) {
 
 	chatHub, _ := newTestHub(t)
 	victim := setUpTest(t)
-	victim.Client.Name = "Alice"
-	mustRegister(t, chatHub, victim.Client)
+	victim.Session.Name = "Alice"
+	mustRegister(t, chatHub, victim.Session)
 	bystander := joinRoom(t, chatHub, "Bob")
 
-	go victim.Client.readClientInput(chatHub)
+	go victim.Session.readInput(chatHub)
 	if err := victim.Peer.SendCommand("boom", nil); err != nil {
 		t.Fatalf("Could not send the command: %v", err)
 	}
@@ -281,11 +281,11 @@ func TestWriteLoopSurvivesAPanic(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	// No Conn, so the first write panics on a nil dereference.
-	broken := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	broken := &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)}
 	mustRegister(t, chatHub, broken)
 	bystander := joinRoom(t, chatHub, "Bob")
 
-	go broken.processClientOutQueue(chatHub)
+	go broken.writeLoop(chatHub)
 	broken.Out <- mustChatFrame(t, "Alice", "boom")
 
 	if got, want := systemText(t, nextReply(t, bystander)), "Alice has disconnected."; got != want {

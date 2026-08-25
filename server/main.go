@@ -57,7 +57,7 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 	hub.wait()
 }
 
-// Listen for incoming client connections, create them, then start a goroutine to handle them.
+// Listen for incoming client connections, make a session for each, then start a goroutine to handle it.
 func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 	defer close(stopped)
 	for {
@@ -76,7 +76,7 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 }
 
 func handleNewConn(hub *Hub, conn net.Conn) {
-	// A connection is detected. Make the client
+	// A connection is detected. Make the session
 	fullc := protocol.NewConn(conn)
 	clientName, err := verifyName(fullc, hub.version)
 	if err != nil {
@@ -93,9 +93,9 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		return
 	}
 
-	newClient := newClient(fullc, clientName)
+	sess := newSession(fullc, clientName)
 
-	if err := hub.registerClient(newClient); err != nil {
+	if err := hub.registerSession(sess); err != nil {
 		if errors.Is(err, ErrNameTaken) {
 			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
 				log.Printf("could not report taken name to %s: %v", clientName, sendErr)
@@ -108,25 +108,25 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 	// Send handshake ack
 	if err := fullc.SendHandshakeAck(clientName); err != nil {
 		log.Printf("handshake ack to %s has failed: %v", clientName, err)
-		newClient.leave(hub)
+		sess.leave(hub)
 		return
 	}
 
 	// Announce successful connection to others.
-	f, err := announceConnection(newClient.Name)
+	f, err := announceConnection(sess.Name)
 	if err != nil {
-		log.Printf("could not build connect announcement for %s: %v", newClient.Name, err)
-		newClient.leave(hub)
+		log.Printf("could not build connect announcement for %s: %v", sess.Name, err)
+		sess.leave(hub)
 		return
 	}
 	if err := hub.broadcastFrame(f); err != nil {
-		log.Printf("could not announce %s: %v", newClient.Name, err)
-		newClient.leave(hub)
+		log.Printf("could not announce %s: %v", sess.Name, err)
+		sess.leave(hub)
 		return
 	}
 
-	go newClient.processClientOutQueue(hub)
-	go newClient.readClientInput(hub)
+	go sess.writeLoop(hub)
+	go sess.readInput(hub)
 }
 
 func verifyName(fullc *protocol.Conn, version string) (string, error) {

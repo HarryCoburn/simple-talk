@@ -24,19 +24,19 @@ const messageFormat = "<%s> %s"
 const poseFormat = "%s %s"
 
 type registerReq struct {
-	client *Client
-	reply  chan error
+	session *Session
+	reply   chan error
 }
 
 type Hub struct {
-	register   chan registerReq    // Register a new client
-	unregister chan *Client        // Unregister a client
-	broadcast  chan protocol.Frame // Send a frame to all clients
+	register   chan registerReq    // Register a new session
+	unregister chan *Session       // Unregister a session
+	broadcast  chan protocol.Frame // Send a frame to all sessions
 	tasks      chan func(*Hub)     // Run a closure inside Hub.run without disrupting serialization
 	done       chan struct{}       // Signal we're done with the hub. Begin teardown.
 	finished   chan struct{}       // Signal the hub is completely closed.
 	stopOnce   sync.Once           // Guards against a second close
-	clientList map[string]*Client  // All clients, keyed by the folded form of their name.
+	sessions   map[string]*Session // All sessions, keyed by the folded form of their name.
 	version    string              // The protocol version this server speaks
 }
 
@@ -44,12 +44,12 @@ type Hub struct {
 func newHub(v string) *Hub {
 	hub := Hub{
 		register:   make(chan registerReq),
-		unregister: make(chan *Client),
+		unregister: make(chan *Session),
 		broadcast:  make(chan protocol.Frame),
 		tasks:      make(chan func(*Hub)),
 		done:       make(chan struct{}),
 		finished:   make(chan struct{}),
-		clientList: make(map[string]*Client),
+		sessions:   make(map[string]*Session),
 		version:    v,
 	}
 	return &hub
@@ -63,29 +63,29 @@ func (h *Hub) run() {
 		select {
 		case req := <-h.register:
 			// The name must be folded, checked and claimed in the same loop
-			// call, or two clients racing for one name could both find it free.
-			key, err := validate.NameKey(req.client.Name)
+			// call, or two sessions racing for one name could both find it free.
+			key, err := validate.NameKey(req.session.Name)
 			if err != nil {
 				// A name that will not fold cannot be held: it could not be
 				// matched against later.
 				req.reply <- ErrNameTaken
 				continue
 			}
-			if _, taken := h.clientList[key]; taken {
+			if _, taken := h.sessions[key]; taken {
 				req.reply <- ErrNameTaken
 				continue
 			}
-			// The key belongs to the client from here on: every later lookup
+			// The key belongs to the session from here on: every later lookup
 			// uses it, so it must not be recomputed from a name that could
 			// have moved on.
-			req.client.key = key
-			h.clientList[key] = req.client
+			req.session.key = key
+			h.sessions[key] = req.session
 			req.reply <- nil
 		case c := <-h.unregister:
 			if !h.registered(c) {
-				continue // Client is already unregistered.
+				continue // Session is already unregistered.
 			}
-			h.closeClient(c)
+			h.closeSession(c)
 			f, err := announceDisconnection(c.Name)
 			if err != nil {
 				log.Printf("could not build disconnect announcement for %s: %v", c.Name, err)
@@ -100,36 +100,39 @@ func (h *Hub) run() {
 			// goroutine instead.
 			task(h)
 		case <-h.done:
-			// Start teardown by closing all clients. h.Finished will signal the rest.
-			for _, c := range h.clientList {
-				h.closeClient(c)
+			// Start teardown by closing all sessions. h.Finished will signal the rest.
+			for _, c := range h.sessions {
+				h.closeSession(c)
 			}
 			return
 		}
 	}
 }
 
-// stop signals the hub to begin a teardown. stop does not wait. Pair with Wait if you need that.
+// stop signals the hub to begin a teardown. stop does not wait. Pair with wait if you need that.
 func (h *Hub) stop() {
 	h.stopOnce.Do(func() { close(h.done) })
 }
 
-// wait blocks until run() has torn the hub down. Only returns if run() was started and Stop was called
+// wait blocks until run() has torn the hub down. Only returns if run() was started and stop was called
 func (h *Hub) wait() {
 	<-h.finished
 }
 
-// doneChan reports hub shutdown to outside parties.
+// doneChan reports hub shutdown to callers outside the hub goroutine.
 func (h *Hub) doneChan() <-chan struct{} {
 	return h.done
 }
 
 // Channel Calls
-func (h *Hub) registerClient(c *Client) error {
+//
+// These cross the hub goroutine boundary but stay inside the package: nothing
+// outside package server holds a *Hub.
+func (h *Hub) registerSession(c *Session) error {
 	// Buffering
 	ch := make(chan error, 1)
 	select {
-	case h.register <- registerReq{client: c, reply: ch}:
+	case h.register <- registerReq{session: c, reply: ch}:
 	case <-h.done:
 		return ErrHubClosed
 	}
@@ -141,14 +144,14 @@ func (h *Hub) registerClient(c *Client) error {
 	}
 }
 
-func (h *Hub) unregisterClient(c *Client) {
+func (h *Hub) unregisterSession(c *Session) {
 	select {
 	case h.unregister <- c:
 	case <-h.done:
 	}
 }
 
-// Broadcast is for external callers only. Use deliver() for internal broadcasts
+// broadcastFrame is for callers outside the hub goroutine. Use deliver() for internal broadcasts
 func (h *Hub) broadcastFrame(f protocol.Frame) error {
 	select {
 	case h.broadcast <- f:
@@ -194,10 +197,10 @@ func exec(h *Hub, fn func(*Hub)) bool {
 	return ok
 }
 
-func (h *Hub) clientNames() ([]string, error) {
+func (h *Hub) sessionNames() ([]string, error) {
 	names, ok := query(h, func(h *Hub) []string {
-		names := make([]string, 0, len(h.clientList))
-		for _, c := range h.clientList {
+		names := make([]string, 0, len(h.sessions))
+		for _, c := range h.sessions {
 			// The roster shows the name as the user typed it, not the folded
 			// key it is stored under.
 			names = append(names, c.Name)
@@ -211,17 +214,17 @@ func (h *Hub) clientNames() ([]string, error) {
 	return names, nil
 }
 
-// registered reports whether this exact client is the one currently holding its
-// key. A name is not a unique handle across a reconnect: both of a client's
+// registered reports whether this exact session is the one currently holding its
+// key. A name is not a unique handle across a reconnect: both of a session's
 // goroutines can call leave, and if the user reconnects under the same name
-// between the two, the stale leave would otherwise find the new client's entry
+// between the two, the stale leave would otherwise find the new session's entry
 // and tear it down.
-func (h *Hub) registered(c *Client) bool {
-	current, ok := h.clientList[c.key]
+func (h *Hub) registered(c *Session) bool {
+	current, ok := h.sessions[c.key]
 	return ok && current == c
 }
 
-func (h *Hub) closeClient(c *Client) {
+func (h *Hub) closeSession(c *Session) {
 	if !h.registered(c) {
 		return
 	}
@@ -229,12 +232,12 @@ func (h *Hub) closeClient(c *Client) {
 	if c.Conn != nil {
 		c.Conn.Close()
 	}
-	delete(h.clientList, c.key)
+	delete(h.sessions, c.key)
 }
 
-// sendTo queues a frame for a single client. Because deliverTo can drop a client whose
+// sendTo queues a frame for a single session. Because deliverTo can drop a session whose
 // Out is not responding, it uses exec
-func (h *Hub) sendTo(c *Client, f protocol.Frame) error {
+func (h *Hub) sendTo(c *Session, f protocol.Frame) error {
 	if !exec(h, func(h *Hub) {
 		h.deliverTo(c, f)
 	}) {
@@ -243,20 +246,20 @@ func (h *Hub) sendTo(c *Client, f protocol.Frame) error {
 	return nil
 }
 
-// deliverTo queues one frame for one client in the hub goroutine.
-func (h *Hub) deliverTo(c *Client, f protocol.Frame) {
+// deliverTo queues one frame for one session in the hub goroutine.
+func (h *Hub) deliverTo(c *Session, f protocol.Frame) {
 	if !h.registered(c) {
 		return // already gone
 	}
 	select {
 	case c.Out <- f:
-	default: // assume client is closed if we cannot reach c.Out
-		h.closeClient(c)
+	default: // assume the session is gone if we cannot reach c.Out
+		h.closeSession(c)
 	}
 }
 
 func (h *Hub) deliver(f protocol.Frame) {
-	for c := range h.clientList {
-		h.deliverTo(h.clientList[c], f)
+	for c := range h.sessions {
+		h.deliverTo(h.sessions[c], f)
 	}
 }
