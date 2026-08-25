@@ -19,12 +19,12 @@ type fakeHub struct {
 	sent     []protocol.Frame
 }
 
-func (f *fakeHub) sendTo(_ *Client, frame protocol.Frame) error {
+func (f *fakeHub) sendTo(_ *Session, frame protocol.Frame) error {
 	f.sent = append(f.sent, frame)
 	return nil
 }
 
-func (f *fakeHub) clientNames() ([]string, error) { return f.names, f.namesErr }
+func (f *fakeHub) sessionNames() ([]string, error) { return f.names, f.namesErr }
 
 func (f *fakeHub) broadcastFrame(frame protocol.Frame) error {
 	f.sent = append(f.sent, frame)
@@ -32,7 +32,7 @@ func (f *fakeHub) broadcastFrame(frame protocol.Frame) error {
 }
 
 // runCommand dispatches a command frame as if the client had sent it.
-func runCommand(t *testing.T, hub commandHub, c *Client, name string, args ...string) error {
+func runCommand(t *testing.T, hub commandHub, c *Session, name string, args ...string) error {
 	t.Helper()
 	f, err := protocol.NewCommandFrame(name, args)
 	if err != nil {
@@ -42,7 +42,7 @@ func runCommand(t *testing.T, hub commandHub, c *Client, name string, args ...st
 }
 
 // who runs /who as the given client and returns the text of the reply.
-func who(t *testing.T, hub *Hub, c *Client) string {
+func who(t *testing.T, hub *Hub, c *Session) string {
 	t.Helper()
 	if err := runCommand(t, hub, c, "who"); err != nil {
 		t.Fatalf("/who returned an unexpected error: %v", err)
@@ -55,7 +55,7 @@ func who(t *testing.T, hub *Hub, c *Client) string {
 // the caller on it, so this path needs a stand in hub to reach.
 func TestCmdWhoReportsAnEmptyRoster(t *testing.T) {
 	hub := &fakeHub{}
-	caller := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	caller := &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)}
 
 	if err := runCommand(t, hub, caller, "who"); err != nil {
 		t.Fatalf("/who returned an unexpected error: %v", err)
@@ -72,7 +72,7 @@ func TestCmdWhoReportsAnEmptyRoster(t *testing.T) {
 // empty room.
 func TestCmdWhoSurfacesARosterError(t *testing.T) {
 	hub := &fakeHub{namesErr: ErrHubClosed}
-	caller := &Client{Name: "Alice", Out: make(chan protocol.Frame, 1)}
+	caller := &Session{Name: "Alice", Out: make(chan protocol.Frame, 1)}
 
 	if err := runCommand(t, hub, caller, "who"); !errors.Is(err, ErrHubClosed) {
 		t.Fatalf("/who returned %v, wanted %v", err, ErrHubClosed)
@@ -110,7 +110,7 @@ func TestCmdWhoFollowsTheHubRoster(t *testing.T) {
 		t.Errorf("/who said %q after Bob joined, wanted %q", got, want)
 	}
 
-	chatHub.unregisterClient(bob)
+	chatHub.unregisterSession(bob)
 	// Bob leaving is announced to the room, so that frame is ahead of the reply
 	// in Alice's queue.
 	if got, want := systemText(t, nextReply(t, alice)), "Bob has disconnected."; got != want {
@@ -126,7 +126,7 @@ func TestCmdWhoFollowsTheHubRoster(t *testing.T) {
 func TestCmdWhoDropsAStalledClient(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	alice := joinRoom(t, chatHub, "Alice")
-	stalled := &Client{Name: "Bob", Out: make(chan protocol.Frame, 1)}
+	stalled := &Session{Name: "Bob", Out: make(chan protocol.Frame, 1)}
 	mustRegister(t, chatHub, stalled)
 
 	// Two broadcasts overrun Bob's one-frame buffer, so the hub drops him.
@@ -268,8 +268,8 @@ func TestDispatchPassesArgumentsToTheHandler(t *testing.T) {
 	}
 
 	ctx := <-got
-	if ctx.client != alice {
-		t.Errorf("The handler ran for %v, wanted the calling client", ctx.client)
+	if ctx.session != alice {
+		t.Errorf("The handler ran for %v, wanted the calling session", ctx.session)
 	}
 	if ctx.hub != chatHub {
 		t.Error("The handler was given a different hub than the caller's")
@@ -281,7 +281,7 @@ func TestDispatchPassesArgumentsToTheHandler(t *testing.T) {
 }
 
 // An error a handler returns is passed back to the caller of dispatch, which is
-// what readClientInput logs.
+// what readInput logs.
 func TestDispatchReturnsAHandlerError(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	alice := joinRoom(t, chatHub, "Alice")

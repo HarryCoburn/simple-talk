@@ -14,7 +14,7 @@ Two anchors:
 - `client/main.go:21` — the dial target is hardcoded to `localhost:2069`. It has to become a
   connection string for TLS to be testable at all, so do that as part of this.
 
-Worth reading `server/hub.go:201` first: `closeClient` closes `c.Conn` itself, so the hub knows
+Worth reading `server/hub.go:201` first: `closeSession` closes `c.Conn` itself, so the hub knows
 about sockets. That is the thing that makes a transport swap invasive. See the architecture note.
 
 ---
@@ -25,21 +25,21 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 - [ ] **Rewrite `docs/server.md`.** It has drifted badly: it documents a `NameTaken` channel that
       does not exist, describes `Query` as "only returns the length of the client list" (it is now
-      the generic `tasks` channel with `submit`/`query`/`exec`), credits `Broadcast` with decorating
-      chat frames (decoration happens in `readClientInput`), leaves `## client.go` empty, and never
+      the generic `tasks` channel with `submit`/`query`/`exec`), credits `broadcastFrame` with decorating
+      chat frames (decoration happens in `readInput`), leaves `## session.go` empty, and never
       mentions `commands.go` or `internal/validate`.
 
 ## P2 — before the next big feature
 
 - [ ] Fold `announceConnection` / `announceDisconnection` (`server/main.go:155,164`) into one helper;
       they differ only in a verb.
-- [ ] Note `/who` costs two hub round-trips (`clientNames`, then `reply`).
+- [ ] Note `/who` costs two hub round-trips (`sessionNames`, then `reply`).
 
 ## Later — unscheduled
 
 - **Connection/port string for client and server to start testing outside localhost**
 - **BubbleTea conversion.**
-- **Rooms / MUD.** `clientList` is one flat set and `deliver` means "everyone". Rooms need a `Room`
+- **Rooms / MUD.** `sessions` is one flat set and `deliver` means "everyone". Rooms need a `Room`
   type owning its own membership with the hub demoted to a room registry. If this direction is ever
   taken, decide it *before* the P2 restructuring — doing it after commands, private messages, and
   history exist means rewriting all of them.
@@ -64,7 +64,7 @@ Hypothetical 2,000-user target. Recorded so the cliffs are known, not as schedul
 which wall you hit first.
 
 1. Every frame is JSON-marshalled once *per recipient* — `deliverTo` queues the `Frame` struct and
-   each client's `processClientOutQueue` calls `SendFrame` → `enc.Encode`. Marshalling once into
+   each client's `writeLoop` calls `SendFrame` → `enc.Encode`. Marshalling once into
    `[]byte` is the highest-leverage change and is well contained.
 2. Fan-out is O(N) inside the single hub goroutine (`deliver`, `server/hub.go:235`), so registration,
    `/who`, and everything else queues behind it.
@@ -90,6 +90,6 @@ three-layer split is right too, and `internal/protocol` is the strongest part of
 genuinely reusable, defensive about hostile input, with the desync recovery most hobby
 implementations skip.
 
-Two reservations survive: `closeClient` (`server/hub.go:201`) owns transport concerns, which is what
+Two reservations survive: `closeSession` (`server/hub.go:201`) owns transport concerns, which is what
 makes the hub untestable without `net.Pipe` and what will make TLS or a WebSocket transport invasive;
 and there is no `context.Context` anywhere.

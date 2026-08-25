@@ -13,18 +13,18 @@ import (
 
 func TestEndtoEnd(t *testing.T) {
 	alice := setUpTest(t)
-	alice.Client.Name = "Alice"
+	alice.Session.Name = "Alice"
 	bob := setUpTest(t)
-	bob.Client.Name = "Bob"
+	bob.Session.Name = "Bob"
 	chatHub, _ := newTestHub(t) // newTestHub() starts hub.run()
 
-	mustRegister(t, chatHub, alice.Client)
-	go alice.Client.processClientOutQueue(chatHub)
-	go alice.Client.readClientInput(chatHub)
+	mustRegister(t, chatHub, alice.Session)
+	go alice.Session.writeLoop(chatHub)
+	go alice.Session.readInput(chatHub)
 
-	mustRegister(t, chatHub, bob.Client)
-	go bob.Client.processClientOutQueue(chatHub)
-	go bob.Client.readClientInput(chatHub)
+	mustRegister(t, chatHub, bob.Session)
+	go bob.Session.writeLoop(chatHub)
+	go bob.Session.readInput(chatHub)
 
 	// Bound the reads, so a regression fails this test instead of hanging the
 	// whole binary until the package timeout panics.
@@ -98,7 +98,7 @@ func TestAcceptLoop(t *testing.T) {
 	}
 
 	// Chat sent on the same connection the handshake used. verifyName and
-	// readClientInput share one protocol.Conn, so a chat that arrived in the
+	// readInput share one protocol.Conn, so a chat that arrived in the
 	// same read as the handshake is already sitting in that bufio.Reader and is
 	// not lost.
 	if err := peer.SendChat("Harry", "Hello"); err != nil {

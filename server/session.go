@@ -13,31 +13,33 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
-// An individual client connection.
-type Client struct {
+// Session is one connected user: their socket, the name they chose, and the
+// queue of frames waiting to go out to them. The client program at the other
+// end is not modelled here — anything that speaks the protocol gets a Session.
+type Session struct {
 	Conn *protocol.Conn      // The protocol connection
-	Name string              // The username of the Client
+	Name string              // The username of the Session
 	Out  chan protocol.Frame // The message channel queue
-	key  string              // The folded name this client is registered under. Set by the hub at registration.
+	key  string              // The folded name this session is registered under. Set by the hub at registration.
 }
 
-func newClient(conn *protocol.Conn, name string) *Client {
-	return &Client{
+func newSession(conn *protocol.Conn, name string) *Session {
+	return &Session{
 		Conn: conn,
 		Name: name,
 		Out:  make(chan protocol.Frame, 256),
 	}
 }
 
-// guard turns a panic on one client's goroutine into that one client leaving.
+// guard turns a panic on one session's goroutine into that one session leaving.
 // Without it a bug anywhere in a session — a command handler, a malformed frame,
 // a nil dereference — unwinds past main and takes every other user's session
-// with it. The client is dropped rather than resumed: whatever invariant the
+// with it. The session is dropped rather than resumed: whatever invariant the
 // panic broke, this connection is no longer trustworthy.
 //
-// Deferred at the top of each of a client's goroutines. recover only sees panics
+// Deferred at the top of each of a session's goroutines. recover only sees panics
 // from the goroutine it is deferred in, so every goroutine needs its own.
-func (c *Client) guard(hub *Hub, loop string) {
+func (c *Session) guard(hub *Hub, loop string) {
 	r := recover()
 	if r == nil {
 		return
@@ -46,10 +48,10 @@ func (c *Client) guard(hub *Hub, loop string) {
 	c.leave(hub)
 }
 
-func (c *Client) processClientOutQueue(hub *Hub) {
+func (c *Session) writeLoop(hub *Hub) {
 	defer c.guard(hub, "write loop")
-	// Listens to the client's Out queue, then writes any message received to Writer for display.
-	// The socket belongs to hub.closeClient, and that closes c.Out, so this loop does not need
+	// Listens to the session's Out queue, then writes any message received to Writer for display.
+	// The socket belongs to hub.closeSession, and that closes c.Out, so this loop does not need
 	// to close.
 	for frame := range c.Out {
 		// Out should hold a completed frame
@@ -62,10 +64,10 @@ func (c *Client) processClientOutQueue(hub *Hub) {
 	}
 }
 
-func (c *Client) readClientInput(hub *Hub) {
+func (c *Session) readInput(hub *Hub) {
 	defer c.guard(hub, "read loop")
 	for {
-		// Reads what the client writes. Closes client safely if there is a problem with reading.
+		// Reads what the user sends. Closes the session safely if there is a problem with reading.
 		frame, err := c.Conn.Recv()
 		if err != nil {
 			switch {
@@ -118,14 +120,14 @@ func (c *Client) readClientInput(hub *Hub) {
 	}
 }
 
-func (c *Client) leave(hub *Hub) {
-	hub.unregisterClient(c)
+func (c *Session) leave(hub *Hub) {
+	hub.unregisterSession(c)
 }
 
 // checkChat applies the message rules to an incoming chat frame. A malformed
 // payload is reported the same way as a disallowed one: the sender hears about
 // it and the room never sees it.
-func (c *Client) checkChat(f protocol.Frame) error {
+func (c *Session) checkChat(f protocol.Frame) error {
 	var chat protocol.Chat
 	if err := json.Unmarshal(f.Payload, &chat); err != nil {
 		return validate.ErrMessageNotAllowed
