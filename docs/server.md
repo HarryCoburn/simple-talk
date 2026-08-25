@@ -34,3 +34,9 @@ These channels are not accessed directly. Instead, there are several methods on 
 There are also hub methods used by commands: sendTo() replies to one session, and sessionNames() reads the roster.
 
 ## session.go
+
+This holds the Session struct and its associated features. When a client sends a connection, the server places it into a Session struct.
+
+readInput and writeLoop are the input to and output from the session respectively.
+
+Sessions are also responsible for using internal/verify to check for disallowed message types, and they also handle decorating the chat strings.

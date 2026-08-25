@@ -131,12 +131,17 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 
 func verifyName(fullc *protocol.Conn, version string) (string, error) {
 	// Get the frame for name entry.
-	fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout))
+	if err := fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout)); err != nil {
+		return "", fmt.Errorf("Something went wrong setting a read deadline: %v", err)
+	}
 	f, err := fullc.Recv()
 	if err != nil {
 		return "", fmt.Errorf("problem with handshake frame: %w", err)
 	}
-	fullc.SetReadDeadline(time.Time{})
+
+	if err := fullc.SetReadDeadline(time.Time{}); err != nil {
+		return "", fmt.Errorf("Something went wrong with releasing a read deadline: %v", err)
+	}
 
 	// Is it the right kind?
 	if f.Kind != protocol.KindHandshake {

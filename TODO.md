@@ -21,7 +21,7 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P0 — easy defects
 
-- [ ] **Both `SetReadDeadline` calls in `verifyName` drop their error**
+- [X] **Both `SetReadDeadline` calls in `verifyName` drop their error**
       (`server/main.go:134,139`). `errcheck` would flag them.
 - [ ] **`commandNames()` hands every caller the same backing slice** (`server/commands.go:47`).
       `sync.OnceValue` memoises the slice header, so a handler that sorts or appends to
