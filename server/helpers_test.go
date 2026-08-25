@@ -60,7 +60,7 @@ func systemText(t *testing.T, f protocol.Frame) string {
 
 func mustRegister(t *testing.T, hub *Hub, c *Client) {
 	t.Helper()
-	if err := hub.Register(c); err != nil {
+	if err := hub.registerClient(c); err != nil {
 		t.Fatalf("Could not register %q: %v", c.Name, err)
 	}
 }
@@ -71,8 +71,8 @@ func newTestHub(t *testing.T) (*Hub, func()) {
 	// Start the chathub goroutine
 	go chatHub.run()
 	stop := func() {
-		chatHub.Stop()
-		chatHub.Wait()
+		chatHub.stop()
+		chatHub.wait()
 	}
 	t.Cleanup(stop)
 	return chatHub, stop

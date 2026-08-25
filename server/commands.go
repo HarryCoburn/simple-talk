@@ -20,7 +20,7 @@ import (
 type commandHub interface {
 	sendTo(c *Client, f protocol.Frame) error
 	clientNames() ([]string, error)
-	Broadcast(f protocol.Frame) error
+	broadcastFrame(f protocol.Frame) error
 }
 
 var _ commandHub = (*Hub)(nil)

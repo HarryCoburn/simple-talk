@@ -32,13 +32,13 @@ func TestDeregisterClient(t *testing.T) {
 
 	// Register, then deregister the client
 	mustRegister(t, chatHub, chatClient)
-	chatHub.Unregister(chatClient)
+	chatHub.unregisterClient(chatClient)
 
 	// Testing
 	wantRoster(t, chatHub)
 
 	// Try double deregistration
-	chatHub.Unregister(chatClient)
+	chatHub.unregisterClient(chatClient)
 	wantRoster(t, chatHub)
 }
 
@@ -49,14 +49,14 @@ func TestRegisterRejectsADuplicateName(t *testing.T) {
 	first := &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)}
 	mustRegister(t, chatHub, first)
 
-	err := chatHub.Register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+	err := chatHub.registerClient(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 	if !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Wanted ErrNameTaken for a second %q, got %v", "Harry", err)
 	}
 	wantRoster(t, chatHub, "Harry")
 
 	// The name frees up once its holder leaves.
-	chatHub.Unregister(first)
+	chatHub.unregisterClient(first)
 	mustRegister(t, chatHub, &Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 }
 
@@ -72,7 +72,7 @@ func TestRegisterIsAtomicUnderRacingNames(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results <- chatHub.Register(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
+			results <- chatHub.registerClient(&Client{Name: "Harry", Out: make(chan protocol.Frame, 1)})
 		}()
 	}
 	wg.Wait()
@@ -103,7 +103,7 @@ func TestBroadcast(t *testing.T) {
 	f := mustChatFrame(t, "Alice", "Test")
 	mustRegister(t, chatHub, client1)
 	mustRegister(t, chatHub, client2)
-	chatHub.Broadcast(f)
+	chatHub.broadcastFrame(f)
 	var f1 protocol.Frame
 	var f2 protocol.Frame
 	select {
@@ -132,8 +132,8 @@ func TestDroppedClientPath(t *testing.T) {
 	mustRegister(t, chatHub, client)
 	frame1 := mustChatFrame(t, "Alice", "Test")
 	frame2 := mustChatFrame(t, "Alice", "Received")
-	chatHub.Broadcast(frame1) // Fill buffer
-	chatHub.Broadcast(frame2) // Overload Client.Out, which should force server to drop the client.
+	chatHub.broadcastFrame(frame1) // Fill buffer
+	chatHub.broadcastFrame(frame2) // Overload Client.Out, which should force server to drop the client.
 
 	wantRoster(t, chatHub)
 
@@ -149,7 +149,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
-	chatHub.Stop()
+	chatHub.stop()
 	select {
 	case <-exited:
 		return
@@ -163,7 +163,7 @@ func TestDoneGuardsUnregister(t *testing.T) {
 	chatHub := newHub(serverVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Client.readClientInput(chatHub); close(exited) }()
-	chatHub.Stop()
+	chatHub.stop()
 	testHelp.OutConn.Close()
 	select {
 	case <-exited:
@@ -212,7 +212,7 @@ func TestRegisterRejectsANameTakenInAnotherCase(t *testing.T) {
 	joinRoom(t, chatHub, "Harry")
 
 	second := &Client{Name: "harry", Out: make(chan protocol.Frame, 8)}
-	if err := chatHub.Register(second); !errors.Is(err, ErrNameTaken) {
+	if err := chatHub.registerClient(second); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("Registering %q against %q returned %v, wanted %v", "harry", "Harry", err, ErrNameTaken)
 	}
 }
@@ -225,14 +225,14 @@ func TestAStaleUnregisterLeavesAReconnectedClientAlone(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	first := joinRoom(t, chatHub, "Alice")
-	chatHub.Unregister(first)
+	chatHub.unregisterClient(first)
 
 	// Register blocks on the hub's reply, so by the time it returns the
 	// unregister ahead of it has already been handled.
 	second := joinRoom(t, chatHub, "Alice")
 
 	// The second leave for the client that is already gone.
-	chatHub.Unregister(first)
+	chatHub.unregisterClient(first)
 
 	names, err := chatHub.clientNames()
 	if err != nil {
@@ -257,10 +257,10 @@ func TestABroadcastSkipsAClientReplacedByAReconnect(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 
 	first := joinRoom(t, chatHub, "Alice")
-	chatHub.Unregister(first)
+	chatHub.unregisterClient(first)
 	second := joinRoom(t, chatHub, "Alice")
 
-	if err := chatHub.Broadcast(mustChatFrame(t, "bob", "hello")); err != nil {
+	if err := chatHub.broadcastFrame(mustChatFrame(t, "bob", "hello")); err != nil {
 		t.Fatalf("Could not broadcast: %v", err)
 	}
 	if got := chatText(t, nextReply(t, second)); got != "hello" {

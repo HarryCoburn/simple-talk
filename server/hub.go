@@ -109,23 +109,23 @@ func (h *Hub) run() {
 	}
 }
 
-// Stop signals the hub to begin a teardown. Stop does not wait. Pair with Wait if you need that.
-func (h *Hub) Stop() {
+// stop signals the hub to begin a teardown. stop does not wait. Pair with Wait if you need that.
+func (h *Hub) stop() {
 	h.stopOnce.Do(func() { close(h.done) })
 }
 
-// Wait blocks until run() has torn the hub down. Only returns if run() was started and Stop was called
-func (h *Hub) Wait() {
+// wait blocks until run() has torn the hub down. Only returns if run() was started and Stop was called
+func (h *Hub) wait() {
 	<-h.finished
 }
 
-// Done reports hub shutdown to outside parties.
-func (h *Hub) Done() <-chan struct{} {
+// doneChan reports hub shutdown to outside parties.
+func (h *Hub) doneChan() <-chan struct{} {
 	return h.done
 }
 
 // Channel Calls
-func (h *Hub) Register(c *Client) error {
+func (h *Hub) registerClient(c *Client) error {
 	// Buffering
 	ch := make(chan error, 1)
 	select {
@@ -141,7 +141,7 @@ func (h *Hub) Register(c *Client) error {
 	}
 }
 
-func (h *Hub) Unregister(c *Client) {
+func (h *Hub) unregisterClient(c *Client) {
 	select {
 	case h.unregister <- c:
 	case <-h.done:
@@ -149,7 +149,7 @@ func (h *Hub) Unregister(c *Client) {
 }
 
 // Broadcast is for external callers only. Use deliver() for internal broadcasts
-func (h *Hub) Broadcast(f protocol.Frame) error {
+func (h *Hub) broadcastFrame(f protocol.Frame) error {
 	select {
 	case h.broadcast <- f:
 	case <-h.done:

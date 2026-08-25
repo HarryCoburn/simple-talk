@@ -101,7 +101,7 @@ func (c *Client) readClientInput(hub *Hub) {
 				log.Printf("dropping malformed chat frame: %v", err)
 				continue
 			}
-			if err := hub.Broadcast(decorated); err != nil {
+			if err := hub.broadcastFrame(decorated); err != nil {
 				if errors.Is(err, ErrHubClosed) {
 					return
 				}
@@ -119,7 +119,7 @@ func (c *Client) readClientInput(hub *Hub) {
 }
 
 func (c *Client) leave(hub *Hub) {
-	hub.Unregister(c)
+	hub.unregisterClient(c)
 }
 
 // checkChat applies the message rules to an incoming chat frame. A malformed

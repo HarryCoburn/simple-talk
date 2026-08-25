@@ -4,15 +4,13 @@ The server directory holds the server for the program.
 
 ## main.go
 
-main() starts the server by
+Run() starts the server by
 
-- Opening a TCP listener
-- Creating a hub
-- Creating a channel lock to hold three goroutines: starting the hub, a listener closer, and acceptLoop
+- Opening a TCP listener for the server and setting up appropriate signals for shutdown.
+- Running serve() to create a hub and run it, then start an acceptLoop goroutine
+- acceptLoop() listens for connection signals on the connection, then passes them to handleNewConn().
 
-acceptLoop() listens for connections. When a connection comes in, it passes the hub and the connection to handleNewConn()
-
-handleNewConn() sets up the client on the server side.
+handleNewConn() sets up the client data on the server side.
 
 - Creates a new protocol.Conn and ties the incoming connection into it
 - Verifies the name sent using verifyName() to prevent name conflicts
@@ -21,24 +19,20 @@ handleNewConn() sets up the client on the server side.
 - Successful hub.Register sends a handshakeAck and a server announcement through announceConnection().
 - Starts two goroutines on the Client, which takes over from the server to handle future frames.
 
+
 ## hub.go
 
-This holds the connected client list and routes frames. The hub has many channels for communication. hub.run() listens to these channels and sends the message to the right locations.
+This holds the connected client list and routes frames between clients and the server based on a Kind entry in the frame. hub.run() listens to these channels and also monitors for shutdowns.
 
-The current channels are:
+These channels are not accessed directly. Instead, there are several exposed methods on the hub to access the channels.
 
-Register - receives a client, adds the client to the the hub's clientList
+- Register(*Client) registers a client.
+- Unregister(*Client) unregisters a client
+- Broadcast(protocol.Frame) sends a frame to all users
 
-Unregister - calls hub.closeClient() to remove the sent client and close it down properly
+There are also hub methods used by commands.
 
-Done - Tells the hub to start shutdown procedures
 
-Finished - Final send from the hub telling everything else the hub is closed.
 
-Query - Intended to be a general query to the server, but may split it out into individual channel commands. Currently only returns the length of the client list.
-
-NameTaken - Checks if a name is taken and returns a bool. Used in name verification.
-
-Broadcast - Sends a message to everyone on the server. If it's a Chat, it decorates it with the sender name.
 
 ## client.go
