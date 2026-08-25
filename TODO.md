@@ -21,8 +21,40 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P0 — easy defects
 
+- [ ] **Both `SetReadDeadline` calls in `verifyName` drop their error**
+      (`server/main.go:134,139`). `errcheck` would flag them.
+- [ ] **`commandNames()` hands every caller the same backing slice** (`server/commands.go:47`).
+      `sync.OnceValue` memoises the slice header, so a handler that sorts or appends to
+      `ctx.roster` corrupts it for every later caller. `slices.Clone` on return, or say
+      read-only on the var.
+- [ ] **An invalid name is a silent hangup.** A *taken* name gets an error frame
+      (`server/main.go:99`), but a name that fails `validate.Name` inside `verifyName` only
+      gets logged — the frame is built for `ErrVersionMismatch` alone (`server/main.go:87`).
+      The client sees a bare EOF and prints "receive error while setting username".
+      `recvHandshake` already handles `KindError`, so this is one branch plus a test
+      alongside the taken-name case in `server/handshake_test.go`.
+
 ## P1 — cheap now, expensive later
 
+- [ ] **The protocol version is declared twice.** `serverVersion` (`server/main.go:18`) and
+      `clientVersion` (`client/main.go:16`) are both `"0.0.1"` and are compared for exact
+      equality across the wire (`server/main.go:154`), with nothing to make them drift
+      together. It is a property of the protocol, not of either end: one `protocol.Version`
+      in `internal/protocol`, read by both. Do this before the version field carries any
+      real weight — auth and structured payloads are both keyed to it.
+- [ ] **`log.Fatal` inside library packages.** `server.Run` (`server/main.go:25`) and
+      `client.Run` (`client/main.go:23`) call `os.Exit` on their caller's behalf. Both
+      become `Run() error`, with `cmd/server` and `cmd/client` doing the `log.Fatal`. It is
+      also what makes `serve` testable today while `Run` is not.
+- [ ] **`func (ctx cmdCtx)` occupies the name `context.Context` needs**
+      (`server/commands.go:57,66`). Rename the receiver before the context conversion below,
+      not during it — commands is exactly where a real `ctx` will want to be threaded.
+- [ ] **Write down the `Out` ownership rule on the field itself** (`server/session.go:22`).
+      `closeSession` closes `c.Out` while `deliverTo` sends to it; that is safe *only*
+      because both run in the hub goroutine (`sendTo` reaches `deliverTo` through `exec`,
+      never directly). A send added from anywhere else is a send-on-closed-channel panic in
+      production, not a test failure. The rule holds today and is explained in `hub.go`'s
+      comments; the person who breaks it will be reading the struct field.
 - [ ] **Rewrite `docs/server.md`.** It has drifted badly: it documents a `NameTaken` channel that
       does not exist, describes `Query` as "only returns the length of the client list" (it is now
       the generic `tasks` channel with `submit`/`query`/`exec`), credits `broadcastFrame` with decorating
@@ -34,6 +66,28 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 - [ ] Fold `announceConnection` / `announceDisconnection` (`server/main.go:155,164`) into one helper;
       they differ only in a verb.
 - [ ] Note `/who` costs two hub round-trips (`sessionNames`, then `reply`).
+- [ ] **Names that point at the wrong thing** — the `Client` → `Session` problem again, one
+      batch so the churn lands once:
+      - `verifyName` (`server/main.go:132`) → `acceptHandshake`. It rejects on version
+        mismatch before it looks at a name; that is its first branch. Its tests already live
+        in `server/handshake_test.go`, which is the tell.
+      - `sendHandshake` (`client/handshake.go:17`) → `negotiateName`. It sends, receives,
+        validates and re-prompts in a loop, returning the server's acked name. Sending is
+        the smallest thing it does.
+      - `readInput` (`server/session.go:67`) → `readLoop`. Asymmetric with `writeLoop` for
+        what is a symmetric pair of goroutines.
+      - `server/main.go` → `server/server.go`, `client/main.go` → `client/client.go`.
+        Neither is `package main`; the real ones are in `cmd/`.
+      - `newHub(v string)` (`server/hub.go:44`) → `version`.
+      - `messageFormat` / `poseFormat` (`server/hub.go:23,24`) are used only by
+        `decorateChat` (`server/session.go:145,148`). Move them next to it.
+- [ ] **Two indirections that only add a name.** `Session.leave` (`server/session.go:123`)
+      is a one-line alias for `hub.unregisterSession`, and `cleanUserName`
+      (`client/handshake.go:80`) is a one-line passthrough to `validate.Name`. Inline both,
+      or keep them and say why they exist.
+- [ ] **`query` is a pure alias for `submit`** (`server/hub.go:187`) — literally
+      `return submit(h, fn)`. Three names for two behaviours. Delete it and call `submit`;
+      `exec` earns its keep by discarding the result.
 
 ## Later — unscheduled
 
@@ -52,7 +106,10 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 - **`context.Context`.** The `done`/`finished` pair is a correct hand-rolled equivalent; converting
   is a natural exercise, and context composes with timeouts and every library added later.
 - **CI / golangci-lint / Makefile.** Held until BubbleTea is done and completed builds are being
-  pushed to the VPS.
+  pushed to the VPS. One dissent on record, to accept or reject deliberately: `go test -race
+  ./...` could come out of that bundle now — ten lines of workflow YAML, no linter, no release
+  tooling. The concurrency core is both the part most likely to fail in a way that passes
+  locally and the part the rooms work will touch most. The rest of CI can wait for the VPS.
 - **Authentication.** `protocol.Handshake` carries only `Name`; adding a token or password is a
   breaking wire change, so it also pairs with the version field.
 
