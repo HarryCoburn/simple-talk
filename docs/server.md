@@ -4,15 +4,13 @@ The server directory holds the server for the program.
 
 ## main.go
 
-main() starts the server by
+Run() starts the server by
 
-- Opening a TCP listener
-- Creating a hub
-- Creating a channel lock to hold three goroutines: starting the hub, a listener closer, and acceptLoop
+- Opening a TCP listener for the server and setting up appropriate signals for shutdown.
+- Running serve() to create a hub and run it, then start an acceptLoop goroutine
+- acceptLoop() listens for connection signals on the connection, then passes them to handleNewConn().
 
-acceptLoop() listens for connections. When a connection comes in, it passes the hub and the connection to handleNewConn()
-
-handleNewConn() sets up the client on the server side.
+handleNewConn() sets up the session on the server side.
 
 - Creates a new protocol.Conn and ties the incoming connection into it
 - Verifies the name sent using verifyName() to prevent name conflicts
@@ -21,24 +19,18 @@ handleNewConn() sets up the client on the server side.
 - Successful hub.registerSession sends a handshakeAck and a server announcement through announceConnection().
 - Starts two goroutines on the Session, which takes over from the server to handle future frames.
 
+
 ## hub.go
 
-This holds the connected sessions and routes frames. The hub has many channels for communication. hub.run() listens to these channels and sends the message to the right locations.
+This holds the connected sessions and routes frames between sessions and the server based on a Kind entry in the frame. hub.run() listens to these channels and also monitors for shutdowns.
 
-The current channels are:
+These channels are not accessed directly. Instead, there are several methods on the hub to access the channels. None are exported: nothing outside package server holds a *Hub.
 
-registerSession - receives a session, adds it to the hub's sessions map
+- registerSession(*Session) registers a session.
+- unregisterSession(*Session) unregisters a session, closing it down properly.
+- broadcastFrame(protocol.Frame) sends a frame to all users.
+- stop() begins teardown, wait() blocks until it is done, and doneChan() reports the shutdown to the rest of the package.
 
-unregisterSession - calls hub.closeSession() to remove the sent session and close it down properly
-
-doneChan - Tells the hub to start shutdown procedures
-
-Finished - Final send from the hub telling everything else the hub is closed.
-
-Query - Intended to be a general query to the server, but may split it out into individual channel commands. Currently only returns the length of the session list.
-
-NameTaken - Checks if a name is taken and returns a bool. Used in name verification.
-
-broadcastFrame - Sends a message to everyone on the server. If it's a Chat, it decorates it with the sender name.
+There are also hub methods used by commands: sendTo() replies to one session, and sessionNames() reads the roster.
 
 ## session.go
