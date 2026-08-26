@@ -104,6 +104,11 @@ func dispatchCommand(c *Session, hub commandHub, f protocol.Frame) error {
 }
 
 // cmdWho lists everyone currently connected.
+//
+// It costs two round trips through the hub goroutine: sessionNames reads the
+// roster, then reply queues the answer. Both block on the same loop, so a user
+// spamming /who is two units of work each time, not one -- and the sort happens
+// inside the hub goroutine too.
 func cmdWho(cc cmdEnv) error {
 	names, err := cc.hub.sessionNames()
 	if err != nil {

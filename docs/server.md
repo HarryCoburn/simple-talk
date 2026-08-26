@@ -9,7 +9,7 @@ goroutines per connected session. That buys freedom from mutexes over the sessio
 the check-and-claim of a username atomic. Shutdown is a context.Context: cancelling the one Run
 builds reaches the hub, the accept loop, and any handshake still in flight.
 
-## main.go
+## server.go
 
 Run() is the entry point, and is split into three so it can be tested.
 
@@ -36,21 +36,21 @@ buildNewSession(ctx, hub, conn) sets up the server side of one session.
   in Recv, and closing the socket is the only thing that unblocks it: the read deadline is thirty
   seconds out and Recv has no context of its own. The AfterFunc is disarmed at registration,
   because from there the socket belongs to hub.closeSession.
-- Calls verifyName() and, on failure, tells the client why before hanging up. A version mismatch
+- Calls acceptHandshake() and, on failure, tells the client why before hanging up. A version mismatch
   and a name the rules reject both get an error frame; a bare EOF would leave the client with
   nothing to act on. The client's own version is never echoed back, and nameRejection() matches
   the reason against a fixed list of validate errors so a hostile name cannot reach a terminal.
 - Registers the session with the hub, which is where a duplicate name is caught.
-- Sends the handshake ack, announces the arrival through announceConnection(), and starts the
+- Sends the handshake ack, announces the arrival through announcePresence(), and starts the
   session's two goroutines.
 
-verifyName() reads the one handshake frame under protocol.HandshakeTimeout, clears the deadline,
+acceptHandshake() reads the one handshake frame under protocol.HandshakeTimeout, clears the deadline,
 checks the protocol version before it looks at the name, then runs the name through
 internal/validate. The client validates too, for a faster prompt, but this is where the rule is
 enforced: a hand-written client is under no obligation to have checked.
 
-announceConnection() and announceDisconnection() build the system frames for arrivals and
-departures.
+announcePresence() builds the system frame for an arrival or a departure. The two differ only in
+a verb, so they are one helper taking eventConnected or eventDisconnected.
 
 ## hub.go
 
@@ -95,14 +95,14 @@ context.Canceled: ErrHubClosed is this package's vocabulary, context.Canceled is
 ### Running work inside the hub
 
 submit() is the generic core: it sends a closure on tasks and waits for the result, reporting
-false if the hub shut down first. query() reads hub state and exec() mutates it; both are submit
-underneath, with exec discarding the result.
+false if the hub shut down first. exec() is submit for work with no result to return, which is
+what earns it a name of its own.
 
 closeSession() is hub-goroutine-only and is the single owner of teardown for one session: it
 closes the session's Out channel, closes the socket, and deletes the map entry. registered()
-guards it by identity rather than by name, because both of a session's goroutines can call leave,
-and a reconnect under the same name in between would otherwise let a stale leave tear down the
-new session.
+guards it by identity rather than by name, because both of a session's goroutines can unregister
+it, and a reconnect under the same name in between would otherwise let a stale unregister tear
+down the new session.
 
 deliverTo() is deliberately non-blocking. If a session's 256-frame buffer is full the session is
 dropped rather than the hub goroutine blocking on it — one slow reader must not stall routing for
@@ -115,7 +115,7 @@ frames waiting to go out to them, and the folded key the hub registered them und
 
 Each session runs two goroutines, started by buildNewSession():
 
-- readInput() reads frames off the socket and acts on them — chat and pose frames are checked and
+- readLoop() reads frames off the socket and acts on them — chat and pose frames are checked and
   decorated, command frames go to dispatchCommand(), unsupported kinds are ignored rather than
   fatal. An oversized or malformed frame is recoverable: protocol.Conn resynchronises on the
   newline, so the session survives.
@@ -125,8 +125,8 @@ Both defer guard(), which turns a panic on one session's goroutine into that one
 rather than the whole server unwinding. recover only sees panics from its own goroutine, so each
 of the two needs its own.
 
-leave() hands the session back to the hub. Either goroutine may call it, and calling it twice is
-safe.
+Either goroutine hands the session back by calling hub.unregisterSession() directly, and calling
+it twice is safe: the hub guards on identity.
 
 checkChat() runs the message through internal/validate; decorateChat() renders it, using the
 message format for ordinary chat and the pose format for a line starting with ":". Decoration
@@ -155,7 +155,7 @@ context.Context will want to be threaded, and two things reading alike in one fu
 avoiding.
 
 Every cmdEnv method is a round trip through the hub goroutine, so handlers must run on the
-caller's own goroutine and never inside hub.run(). Being called from readInput() is what makes
+caller's own goroutine and never inside hub.run(). Being called from readLoop() is what makes
 that true today.
 
 The command table is a map of name to handler. Currently:
