@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,15 +24,14 @@ func Run() error {
 		return fmt.Errorf("Could not open server listener: %v", err)
 	}
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	serve(ln, signals)
+	serve(ln, ctx)
 	return nil
 }
 
-func serve(ln net.Listener, shutdown <-chan os.Signal) {
+func serve(ln net.Listener, ctx context.Context) {
 
 	hub := newHub(protocol.ProtocolVersion)
 
@@ -41,10 +41,10 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 		<-hub.doneChan()
 		ln.Close()
 	}()
-	go acceptLoop(hub, ln, stopped)
+	go acceptLoop(ctx, hub, ln, stopped)
 
 	select {
-	case sig := <-shutdown:
+	case sig := <-ctx.Done():
 		log.Printf("received %v, shutting down", sig)
 	case <-stopped:
 		// Listener died, tear down the rest
@@ -57,7 +57,7 @@ func serve(ln net.Listener, shutdown <-chan os.Signal) {
 }
 
 // Listen for incoming client connections, make a session for each, then start a goroutine to handle it.
-func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
+func acceptLoop(ctx context.Context, hub *Hub, ln net.Listener, stopped chan struct{}) {
 	defer close(stopped)
 	for {
 		// Listen for incoming connections
@@ -70,11 +70,12 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 			log.Printf("Error accepting a connection: %v\n", err)
 			continue
 		}
-		go buildNewSession(hub, conn)
+
+		go buildNewSession(context.Background(), hub, conn)
 	}
 }
 
-func buildNewSession(hub *Hub, conn net.Conn) {
+func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the session
 	pConn := protocol.NewConn(conn)
 	clientName, err := verifyName(pConn, hub.version)
