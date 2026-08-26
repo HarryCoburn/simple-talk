@@ -3,7 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"testing"
 	"time"
 
@@ -219,30 +223,30 @@ func TestServeShutsDownWhenTheListenerDies(t *testing.T) {
 	}
 }
 
-// Run owns its listener, so a port already in use is the one failure it can hit
-// before there is anything to shut down. It has to come back as an error the
-// caller can act on: log.Fatal here would take the process down on the library's
-// behalf, and returning nil would let cmd/server exit 0 on a server that never
-// started.
-func TestRunReturnsAnErrorWhenThePortIsInUse(t *testing.T) {
-	blocker, err := net.Listen("tcp", ":2069")
+// run owns its listener, so an address already in use is the one failure it can
+// hit before there is anything to shut down. It has to come back as an error
+// the caller can act on: log.Fatal here would take the process down on the
+// library's behalf, and returning nil would let cmd/server exit 0 on a server
+// that never started.
+//
+// The address is a parameter, so this no longer has to gamble on a fixed port
+// being free and skip when it is not.
+func TestRunReturnsAnErrorWhenTheAddressIsInUse(t *testing.T) {
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Skipf("Could not occupy :2069 to make Run fail: %v", err)
+		t.Fatalf("Could not open the blocking listener: %v", err)
 	}
 	t.Cleanup(func() { blocker.Close() })
 
-	// Run blocks in serve once it has a listener, so it needs its own goroutine
-	// even though the case under test returns immediately.
-	errc := make(chan error, 1)
-	go func() { errc <- Run() }()
-
-	select {
-	case err := <-errc:
-		if err == nil {
-			t.Fatal("Run returned nil with :2069 already taken, wanted an error")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not return with :2069 already taken, wanted an error")
+	err = run(context.Background(), blocker.Addr().String(), signal.NotifyContext)
+	if err == nil {
+		t.Fatal("run returned nil against an address already taken, wanted an error")
+	}
+	// The cause travels with it: the caller can tell a port clash from anything
+	// else that stops a listener opening.
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		t.Errorf("run returned %v, wanted it to carry a *net.OpError", err)
 	}
 }
 
@@ -285,4 +289,60 @@ func TestAcceptLoopRefusesAConnectionOnceCancelled(t *testing.T) {
 	if _, err := protocol.NewConn(conn).Recv(); err == nil {
 		t.Error("The accepted connection stayed open after cancellation, wanted it closed")
 	}
+}
+
+// Which signals the server listens for is part of its contract. A fake notify
+// records the request, so this holds without the test binary receiving one.
+func TestRunAsksForInterruptAndSIGTERM(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Could not open the listener: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	var got []os.Signal
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	notify := func(parent context.Context, sigs ...os.Signal) (context.Context, context.CancelFunc) {
+		got = append(got, sigs...)
+		return ctx, cancel
+	}
+
+	returned := make(chan error, 1)
+	go func() { returned <- runOn(context.Background(), ln, notify) }()
+
+	// notify runs before serve, so a listener that accepts proves it was called.
+	waitUntilServing(t, ln.Addr().String())
+	cancel()
+
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatalf("runOn returned %v, wanted nil after a clean shutdown", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("runOn did not return after its notify context was cancelled")
+	}
+
+	// Safe to read: receiving from returned happens after the write.
+	want := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("The server asked to be notified of %v, wanted %v", got, want)
+	}
+}
+
+// waitUntilServing blocks until the address accepts a connection, so a test
+// does not race the goroutine that is still starting the server.
+func waitUntilServing(t *testing.T, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.Dial("tcp", addr)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("Nothing was accepting on %s", addr)
 }

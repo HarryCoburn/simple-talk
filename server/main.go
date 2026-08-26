@@ -16,15 +16,31 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
+// notifyFunc is signal.NotifyContext's shape. Run takes it as a parameter so a
+// test can supply a fake and assert which signals were asked for, without the
+// test binary having to receive any.
+type notifyFunc func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
+
 // Run starts the server and blocks until an interrupt or SIGTERM
 func Run() error {
-	// Create the raw TCP connection. TODO upgrade to TLS.
-	ln, err := net.Listen("tcp", ":2069")
-	if err != nil {
-		return fmt.Errorf("Could not open server listener: %v", err)
-	}
+	return run(context.Background(), ":2069", signal.NotifyContext)
+}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+// run opens the listener and hands it to runOn. Split from Run so a test can
+// name its own address rather than gambling on a fixed port being free.
+func run(ctx context.Context, addr string, notify notifyFunc) error {
+	// Create the raw TCP connection. TODO upgrade to TLS.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("could not open server listener: %w", err)
+	}
+	return runOn(ctx, ln, notify)
+}
+
+// runOn is where the signals are wired to a context. Split from run so a test
+// can supply a listener it already holds the address of.
+func runOn(ctx context.Context, ln net.Listener, notify notifyFunc) error {
+	ctx, stop := notify(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	serve(ctx, ln)
@@ -171,7 +187,7 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 func verifyName(fullc *protocol.Conn, version string) (string, error) {
 	// Get the frame for name entry.
 	if err := fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout)); err != nil {
-		return "", fmt.Errorf("Something went wrong setting a read deadline: %v", err)
+		return "", fmt.Errorf("could not set a read deadline: %w", err)
 	}
 	f, err := fullc.Recv()
 	if err != nil {
@@ -179,7 +195,7 @@ func verifyName(fullc *protocol.Conn, version string) (string, error) {
 	}
 
 	if err := fullc.SetReadDeadline(time.Time{}); err != nil {
-		return "", fmt.Errorf("Something went wrong with releasing a read deadline: %v", err)
+		return "", fmt.Errorf("could not release the read deadline: %w", err)
 	}
 
 	// Is it the right kind?
