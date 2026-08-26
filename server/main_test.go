@@ -215,3 +215,30 @@ func TestServeShutsDownWhenTheListenerDies(t *testing.T) {
 		t.Fatal("serve did not return after the listener closed.")
 	}
 }
+
+// Run owns its listener, so a port already in use is the one failure it can hit
+// before there is anything to shut down. It has to come back as an error the
+// caller can act on: log.Fatal here would take the process down on the library's
+// behalf, and returning nil would let cmd/server exit 0 on a server that never
+// started.
+func TestRunReturnsAnErrorWhenThePortIsInUse(t *testing.T) {
+	blocker, err := net.Listen("tcp", ":2069")
+	if err != nil {
+		t.Skipf("Could not occupy :2069 to make Run fail: %v", err)
+	}
+	t.Cleanup(func() { blocker.Close() })
+
+	// Run blocks in serve once it has a listener, so it needs its own goroutine
+	// even though the case under test returns immediately.
+	errc := make(chan error, 1)
+	go func() { errc <- Run() }()
+
+	select {
+	case err := <-errc:
+		if err == nil {
+			t.Fatal("Run returned nil with :2069 already taken, wanted an error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return with :2069 already taken, wanted an error")
+	}
+}
