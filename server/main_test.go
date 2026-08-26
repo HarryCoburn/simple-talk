@@ -1,10 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net"
-	"os"
-	"syscall"
 	"testing"
 	"time"
 
@@ -63,7 +62,7 @@ func TestAcceptLoop(t *testing.T) {
 
 	chatHub, _ := newTestHub(t)
 	stopped := make(chan struct{})
-	go acceptLoop(chatHub, ln, stopped)
+	go acceptLoop(context.Background(), chatHub, ln, stopped)
 
 	conn, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
@@ -124,7 +123,7 @@ func TestAcceptLoopExitsWhenListenerCloses(t *testing.T) {
 	}
 	chatHub, _ := newTestHub(t)
 	stopped := make(chan struct{})
-	go acceptLoop(chatHub, ln, stopped)
+	go acceptLoop(context.Background(), chatHub, ln, stopped)
 
 	// conn, err := net.Dial("tcp", ln.Addr().String())
 	// if err != nil {
@@ -140,9 +139,12 @@ func TestAcceptLoopExitsWhenListenerCloses(t *testing.T) {
 	}
 }
 
-// A shutdown signal tears down the whole server: serve returns, the listener
+// A cancelled context tears down the whole server: serve returns, the listener
 // stops accepting, and connected clients are closed rather than left hanging.
-func TestServeShutsDownOnSignal(t *testing.T) {
+//
+// This no longer covers the signal itself. Turning SIGTERM into a cancelled
+// context is signal.NotifyContext's job inside Run, which nothing tests yet.
+func TestServeShutsDownWhenTheContextIsCancelled(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Could not open the listener: %v", err)
@@ -150,9 +152,10 @@ func TestServeShutsDownOnSignal(t *testing.T) {
 	t.Cleanup(func() { ln.Close() })
 	addr := ln.Addr().String()
 
-	signals := make(chan os.Signal, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	returned := make(chan struct{})
-	go func() { defer close(returned); serve(ln, signals) }()
+	go func() { defer close(returned); serve(ctx, ln) }()
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -170,12 +173,12 @@ func TestServeShutsDownOnSignal(t *testing.T) {
 		t.Fatalf("Did not receive the handshake ack: %v", err)
 	}
 
-	signals <- syscall.SIGTERM
+	cancel()
 
 	select {
 	case <-returned:
 	case <-time.After(2 * time.Second):
-		t.Fatal("serve did not return after the shutdown signal.")
+		t.Fatal("serve did not return after the context was cancelled.")
 	}
 
 	// The hub finished its teardown before serve returned, so Harry's socket
@@ -197,7 +200,7 @@ func TestServeShutsDownOnSignal(t *testing.T) {
 }
 
 // If the accept loop stops on its own, serve tears the hub down instead of
-// blocking forever on a signal that is never coming.
+// blocking forever on a cancellation that is never coming.
 func TestServeShutsDownWhenTheListenerDies(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -205,7 +208,7 @@ func TestServeShutsDownWhenTheListenerDies(t *testing.T) {
 	}
 
 	returned := make(chan struct{})
-	go func() { defer close(returned); serve(ln, make(chan os.Signal)) }()
+	go func() { defer close(returned); serve(context.Background(), ln) }()
 
 	ln.Close()
 
