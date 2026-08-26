@@ -71,6 +71,17 @@ func acceptLoop(ctx context.Context, hub *Hub, ln net.Listener, stopped chan str
 			continue
 		}
 
+		// A connection accepted after teardown started has nowhere to go: the
+		// hub is closing sessions, not registering them. The listener close
+		// unblocks Accept during shutdown, so this is belt and braces -- and it
+		// is what makes ctx load-bearing here rather than decorative.
+		select {
+		case <-ctx.Done():
+			conn.Close()
+			return
+		default:
+		}
+
 		go buildNewSession(ctx, hub, conn)
 	}
 }
@@ -78,6 +89,17 @@ func acceptLoop(ctx context.Context, hub *Hub, ln net.Listener, stopped chan str
 func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the session
 	pConn := protocol.NewConn(conn)
+
+	// A shutdown has to reach a handshake parked in Recv. Closing the socket is
+	// the only thing that unblocks it: verifyName's read deadline is thirty
+	// seconds out and Recv has no context of its own. The window ends at
+	// registration, because from there the socket belongs to hub.closeSession
+	// and a second closer would only muddy that ownership.
+	hsCtx, endHandshake := context.WithCancel(ctx)
+	defer endHandshake()
+	stopClose := context.AfterFunc(hsCtx, func() { pConn.Close() })
+	defer stopClose()
+
 	clientName, err := verifyName(pConn, hub.version)
 	if err != nil {
 		log.Print(err)
@@ -116,6 +138,11 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 		pConn.Close()
 		return
 	}
+
+	// Registered: the socket is hub.closeSession's from here on. Disarm
+	// explicitly rather than leaning on the defers, which fire far too late.
+	stopClose()
+	endHandshake()
 
 	// Send handshake ack
 	if err := pConn.SendHandshakeAck(clientName); err != nil {

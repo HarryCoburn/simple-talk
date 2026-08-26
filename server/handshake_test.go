@@ -88,6 +88,10 @@ func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
 	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
+	// The connection ctx is Background, and newTestHub derives the hub's from
+	// its own, so stop() cancels the hub alone. Only the broadcastFrame guard
+	// can release this goroutine -- which is the point of the test.
+	//
 	// Take the ack, then stop the hub. Nothing drains Broadcast after that, so
 	// the announcement has only the Done arm left to take.
 	if _, err := peer.Recv(); err != nil {
@@ -278,5 +282,40 @@ func TestHandleNewConnReportsAnInvalidName(t *testing.T) {
 				t.Error("The connection stayed open after an invalid name, wanted it closed")
 			}
 		})
+	}
+}
+
+// A shutdown has to reach a client that connected and then said nothing. The
+// handshake read deadline is thirty seconds out, so without the connection
+// context this goroutine and its socket would outlive the server by that long.
+func TestHandleNewConnClosesWhenTheConnectionCtxIsCancelled(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+
+	serverSide, clientSide := net.Pipe()
+	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
+
+	connCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	exited := make(chan struct{})
+	go func() { defer close(exited); buildNewSession(connCtx, chatHub, serverSide) }()
+
+	// The client sends no handshake at all, so buildNewSession is parked in
+	// Recv with only the deadline to save it. The hub stays up throughout:
+	// cancelling the connection is the only thing under test.
+	peer := protocol.NewConn(clientSide)
+	cancel()
+
+	if err := clientSide.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("Could not set a read deadline: %v", err)
+	}
+	if _, err := peer.Recv(); err == nil {
+		t.Error("The connection stayed open after its context was cancelled, wanted it closed")
+	}
+
+	select {
+	case <-exited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("buildNewSession did not exit after its context was cancelled")
 	}
 }
