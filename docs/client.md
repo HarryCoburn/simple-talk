@@ -3,19 +3,22 @@
 The client software lives inside the client folder. Not to be confused with server/session.go,
 which is the server's representation of a connected user.
 
-Activated by ./cmd/client/main.go, which does nothing but call Run() and report the error it
+Activated by ./cmd/client/main.go, which parses flags, calls Run() and reports the error it
 returns. Nothing in this package exits the process on its caller's behalf.
+
+    simpletalk-client -addr 192.168.1.5:2069
 
 Both client and server use the internal/protocol package as their shared language, including
 protocol.ProtocolVersion. That constant is the protocol's, not either end's: both send and check
 the same value, so the two cannot drift apart.
 
-Currently, the connection string is hardcoded to localhost:2069.
+The server address is -addr, in host:port form, defaulting to client.DefaultAddr
+(localhost:2069). An IPv6 literal needs brackets: -addr "[::1]:2069".
 
 ## client.go
 
-Run() dials the server, wraps the socket in a protocol.Conn, and hands it to negotiateName() for
-the handshake. If that succeeds it starts receiveLoop() on its own goroutine and runs sendLoop()
+Run(addr) dials that address, wraps the socket in a protocol.Conn, and hands it to
+negotiateName() for the handshake. If that succeeds it starts receiveLoop() on its own goroutine and runs sendLoop()
 on the main one, with a dead channel to unblock the sender when the receiver stops.
 
 receiveLoop listens for protocol frames on the client's connection and prints the ones it

@@ -1,6 +1,8 @@
 package client
 
 import (
+	"errors"
+	"net"
 	"slices"
 	"strings"
 	"testing"
@@ -296,5 +298,34 @@ func TestSendLoopSendsCommandsAndEscapedChat(t *testing.T) {
 	}
 	if text != "/not a command" {
 		t.Errorf("Server received the text %q, wanted the escape stripped to %q", text, "/not a command")
+	}
+}
+
+// Run dials where it is told. Before the address was a parameter it was the
+// string "localhost:2069" inside Run, so this asserts the error names the
+// address asked for: a Run still dialling the old constant would report 2069.
+func TestRunDialsTheAddressItIsGiven(t *testing.T) {
+	// Bind then release, so the address is well-formed and nothing answers on it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Could not open a listener to borrow an address from: %v", err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	err = Run(addr)
+	if err == nil {
+		t.Fatal("Run returned nil against an address nothing is listening on, wanted an error")
+	}
+	// Assert on the cause, not the message. The message interpolates addr, so
+	// it names the address asked for even if the dial went somewhere else --
+	// checking it would pass against a Run that ignored its parameter entirely.
+	// OpError.Addr is where the connection was actually attempted.
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		t.Fatalf("Run returned %v, wanted it to carry a *net.OpError", err)
+	}
+	if got := opErr.Addr.String(); got != addr {
+		t.Errorf("Run dialled %s, wanted %s", got, addr)
 	}
 }

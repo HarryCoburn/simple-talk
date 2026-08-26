@@ -346,3 +346,39 @@ func waitUntilServing(t *testing.T, addr string) {
 	}
 	t.Fatalf("Nothing was accepting on %s", addr)
 }
+
+// Run listens where it is told. Before the address was a parameter it was the
+// string ":2069" inside Run, so the test that matters is that a caller-supplied
+// address is the one actually bound -- occupying it is the cheapest proof.
+func TestRunListensOnTheAddressItIsGiven(t *testing.T) {
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Could not open the blocking listener: %v", err)
+	}
+	t.Cleanup(func() { blocker.Close() })
+	addr := blocker.Addr().String()
+
+	// On its own goroutine: a Run that bound some other address would block in
+	// serve rather than return, and the point is to fail fast and say so.
+	errc := make(chan error, 1)
+	go func() { errc <- Run(addr) }()
+
+	var err2 error
+	select {
+	case err2 = <-errc:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Run did not return against the taken address %s -- it bound something else", addr)
+	}
+	if err2 == nil {
+		t.Fatal("Run returned nil against an address already taken, wanted an error")
+	}
+	// Assert on the cause. OpError.Addr is the address actually bound, where the
+	// message would only echo what the caller passed in.
+	var opErr *net.OpError
+	if !errors.As(err2, &opErr) {
+		t.Fatalf("Run returned %v, wanted it to carry a *net.OpError", err2)
+	}
+	if got := opErr.Addr.String(); got != addr {
+		t.Errorf("Run listened on %s, wanted %s", got, addr)
+	}
+}
