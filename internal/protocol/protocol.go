@@ -7,12 +7,13 @@ import "encoding/json"
 type Kind string
 
 const (
-	KindHandshake    Kind = "handshake"
-	KindHandshakeAck Kind = "handshake_ack"
-	KindChat         Kind = "chat"
-	KindError        Kind = "error"
-	KindSystem       Kind = "system"
-	KindCommand      Kind = "command"
+	KindHandshake    Kind   = "handshake"
+	KindHandshakeAck Kind   = "handshake_ack"
+	KindChat         Kind   = "chat"
+	KindError        Kind   = "error"
+	KindSystem       Kind   = "system"
+	KindCommand      Kind   = "command"
+	ProtocolVersion  string = "0.0.1"
 )
 
 type Frame struct {

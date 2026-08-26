@@ -77,7 +77,7 @@ func TestAcceptLoop(t *testing.T) {
 		t.Fatalf("Could not set a read deadline: %v", err)
 	}
 	peer := protocol.NewConn(conn)
-	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
+	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 	ackFrame, err := peer.Recv()
@@ -163,7 +163,7 @@ func TestServeShutsDownOnSignal(t *testing.T) {
 		t.Fatalf("Could not set a read deadline: %v", err)
 	}
 	peer := protocol.NewConn(conn)
-	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
+	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 	if _, err := peer.Recv(); err != nil {

@@ -13,7 +13,6 @@ import (
 )
 
 const userNamePrompt string = "Please state your username: "
-const clientVersion string = "0.0.1"
 
 // main connects to the chat server, sends a handshake through setUserName, then runs a receive loop
 // and send loop.
@@ -28,7 +27,7 @@ func Run() {
 	stdin := bufio.NewScanner(os.Stdin)
 
 	// Handshake
-	name, err := sendHandshake(conn, stdin, clientVersion)
+	name, err := sendHandshake(conn, stdin, protocol.ProtocolVersion)
 	if err != nil {
 		log.Printf("problem with setting username: %v", err)
 		return

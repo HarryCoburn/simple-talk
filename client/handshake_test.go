@@ -3,6 +3,8 @@ package client
 import (
 	"strings"
 	"testing"
+
+	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
 // Tests for the handshake: picking a username the server will accept.
@@ -58,7 +60,7 @@ func TestSetUserNameReturnsTheAckedName(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf(" alice "), clientVersion)
+		name, err = sendHandshake(pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
 	})
 
 	if err != nil {
@@ -94,13 +96,13 @@ func TestSetUserNameSendsTheClientVersion(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 	if err != nil {
 		t.Fatalf("sendHandshake returned an unexpected error: %v", err)
 	}
-	if got := <-versions; got != clientVersion {
-		t.Errorf("Server received the version %q, wanted %q", got, clientVersion)
+	if got := <-versions; got != protocol.ProtocolVersion {
+		t.Errorf("Server received the version %q, wanted %q", got, protocol.ProtocolVersion)
 	}
 }
 
@@ -123,7 +125,7 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf("   ", "bob"), clientVersion)
+		name, err = sendHandshake(pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
 	})
 
 	if err != nil {
@@ -155,7 +157,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
+		name, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -179,7 +181,7 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -201,7 +203,7 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), clientVersion)
+		_, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -216,7 +218,7 @@ func TestSetUserNameHandlesClosedInput(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf(), clientVersion)
+		name, err = sendHandshake(pipe.Client, scannerOf(), protocol.ProtocolVersion)
 	})
 
 	if err != nil {

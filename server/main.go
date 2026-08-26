@@ -15,8 +15,6 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
-const serverVersion string = "0.0.1"
-
 // Run starts the server and blocks until an interrupt or SIGTERM
 func Run() {
 	// Create the raw TCP connection. TODO upgrade to TLS.
@@ -34,7 +32,7 @@ func Run() {
 
 func serve(ln net.Listener, shutdown <-chan os.Signal) {
 
-	hub := newHub(serverVersion)
+	hub := newHub(protocol.ProtocolVersion)
 
 	stopped := make(chan struct{})
 	go hub.run()

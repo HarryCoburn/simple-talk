@@ -66,7 +66,7 @@ func mustRegister(t *testing.T, hub *Hub, c *Session) {
 }
 
 func newTestHub(t *testing.T) (*Hub, func()) {
-	chatHub := newHub(serverVersion)
+	chatHub := newHub(protocol.ProtocolVersion)
 
 	// Start the chathub goroutine
 	go chatHub.run()

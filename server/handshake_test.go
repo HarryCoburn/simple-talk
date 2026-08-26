@@ -19,7 +19,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	serverSide, clientSide := net.Pipe()
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
-	chatHub := newHub(serverVersion)
+	chatHub := newHub(protocol.ProtocolVersion)
 	chatHub.stop()
 
 	go handleNewConn(chatHub, serverSide)
@@ -28,7 +28,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	}
 
 	peer := protocol.NewConn(clientSide)
-	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
+	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
@@ -55,7 +55,7 @@ func TestHandleNewConnReportsATakenName(t *testing.T) {
 		t.Fatalf("Could not set a deadline: %v", err)
 	}
 	peer := protocol.NewConn(clientSide)
-	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
+	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
 	go func() { handleNewConn(chatHub, serverSide); close(exited) }()
 
 	peer := protocol.NewConn(clientSide)
-	if err := peer.SendHandshake("Harry", serverVersion); err != nil {
+	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
 		t.Fatalf("Could not send the handshake: %v", err)
 	}
 	// Take the ack, then stop the hub. Nothing drains Broadcast after that, so
@@ -122,9 +122,9 @@ func TestVerifyNameRejectsBadNames(t *testing.T) {
 			server := protocol.NewConn(in)
 			peer := protocol.NewConn(out)
 
-			go func() { peer.SendHandshake(tc.name, serverVersion) }()
+			go func() { peer.SendHandshake(tc.name, protocol.ProtocolVersion) }()
 
-			got, err := verifyName(server, serverVersion)
+			got, err := verifyName(server, protocol.ProtocolVersion)
 			if err == nil {
 				t.Fatalf("verifyName accepted %q as %q, wanted a rejection", tc.name, got)
 			}
@@ -152,7 +152,7 @@ func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
 
 			go func() { peer.SendHandshake("Harry", tc.version) }()
 
-			got, err := verifyName(server, serverVersion)
+			got, err := verifyName(server, protocol.ProtocolVersion)
 			if err == nil {
 				t.Fatalf("verifyName accepted version %q as %q, wanted a rejection", tc.version, got)
 			}
@@ -172,7 +172,7 @@ func TestVerifyNameChecksTheVersionItWasGiven(t *testing.T) {
 	server := protocol.NewConn(in)
 	peer := protocol.NewConn(out)
 
-	go func() { peer.SendHandshake("Harry", serverVersion) }()
+	go func() { peer.SendHandshake("Harry", protocol.ProtocolVersion) }()
 
 	if got, err := verifyName(server, "9.9.9"); !errors.Is(err, ErrVersionMismatch) {
 		t.Fatalf("verifyName returned %q, %v against a server on 9.9.9, wanted %v", got, err, ErrVersionMismatch)
@@ -186,9 +186,9 @@ func TestVerifyNameAcceptsAMatchingVersion(t *testing.T) {
 	server := protocol.NewConn(in)
 	peer := protocol.NewConn(out)
 
-	go func() { peer.SendHandshake("  Harry  ", serverVersion) }()
+	go func() { peer.SendHandshake("  Harry  ", protocol.ProtocolVersion) }()
 
-	got, err := verifyName(server, serverVersion)
+	got, err := verifyName(server, protocol.ProtocolVersion)
 	if err != nil {
 		t.Fatalf("verifyName rejected a matching version: %v", err)
 	}
@@ -219,8 +219,8 @@ func TestHandleNewConnReportsAVersionMismatch(t *testing.T) {
 	if err := json.Unmarshal(f.Payload, &got); err != nil {
 		t.Fatalf("Could not unpack the error payload: %v", err)
 	}
-	if !strings.Contains(got.Message, serverVersion) {
-		t.Errorf("The reason was %q, wanted it to name the server version %q", got.Message, serverVersion)
+	if !strings.Contains(got.Message, protocol.ProtocolVersion) {
+		t.Errorf("The reason was %q, wanted it to name the server version %q", got.Message, protocol.ProtocolVersion)
 	}
 
 	// The rejected client is hung up on rather than left half connected.
@@ -250,7 +250,7 @@ func TestHandleNewConnReportsAnInvalidName(t *testing.T) {
 			peer := protocol.NewConn(out)
 
 			go handleNewConn(chatHub, in)
-			go func() { peer.SendHandshake(tc.name, serverVersion) }()
+			go func() { peer.SendHandshake(tc.name, protocol.ProtocolVersion) }()
 
 			f, err := peer.Recv()
 			if err != nil {

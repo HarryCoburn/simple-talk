@@ -141,7 +141,7 @@ func TestDroppedClientPath(t *testing.T) {
 
 func TestDoneGuardsBroadcastSend(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(serverVersion)
+	chatHub := newHub(protocol.ProtocolVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
 	// Nothing is draining chatHub.Broadcast, so readInput parks in the
@@ -160,7 +160,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 
 func TestDoneGuardsUnregister(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(serverVersion)
+	chatHub := newHub(protocol.ProtocolVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
 	chatHub.stop()
