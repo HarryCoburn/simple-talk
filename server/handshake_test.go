@@ -122,7 +122,7 @@ func TestVerifyNameRejectsBadNames(t *testing.T) {
 			server := protocol.NewConn(in)
 			peer := protocol.NewConn(out)
 
-			go func() { peer.SendHandshake(tc.name, protocol.ProtocolVersion) }()
+			sendHandshakeInBackground(t, peer, tc.name, protocol.ProtocolVersion)
 
 			got, err := verifyName(server, protocol.ProtocolVersion)
 			if err == nil {
@@ -150,7 +150,7 @@ func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
 			server := protocol.NewConn(in)
 			peer := protocol.NewConn(out)
 
-			go func() { peer.SendHandshake("Harry", tc.version) }()
+			sendHandshakeInBackground(t, peer, "Harry", tc.version)
 
 			got, err := verifyName(server, protocol.ProtocolVersion)
 			if err == nil {
@@ -172,7 +172,7 @@ func TestVerifyNameChecksTheVersionItWasGiven(t *testing.T) {
 	server := protocol.NewConn(in)
 	peer := protocol.NewConn(out)
 
-	go func() { peer.SendHandshake("Harry", protocol.ProtocolVersion) }()
+	sendHandshakeInBackground(t, peer, "Harry", protocol.ProtocolVersion)
 
 	if got, err := verifyName(server, "9.9.9"); !errors.Is(err, ErrVersionMismatch) {
 		t.Fatalf("verifyName returned %q, %v against a server on 9.9.9, wanted %v", got, err, ErrVersionMismatch)
@@ -186,7 +186,7 @@ func TestVerifyNameAcceptsAMatchingVersion(t *testing.T) {
 	server := protocol.NewConn(in)
 	peer := protocol.NewConn(out)
 
-	go func() { peer.SendHandshake("  Harry  ", protocol.ProtocolVersion) }()
+	sendHandshakeInBackground(t, peer, "  Harry  ", protocol.ProtocolVersion)
 
 	got, err := verifyName(server, protocol.ProtocolVersion)
 	if err != nil {
@@ -206,7 +206,7 @@ func TestHandleNewConnReportsAVersionMismatch(t *testing.T) {
 	peer := protocol.NewConn(out)
 
 	go buildNewSession(chatHub, in)
-	go func() { peer.SendHandshake("Harry", "0.0.0") }()
+	sendHandshakeInBackground(t, peer, "Harry", "0.0.0")
 
 	f, err := peer.Recv()
 	if err != nil {
@@ -250,7 +250,7 @@ func TestHandleNewConnReportsAnInvalidName(t *testing.T) {
 			peer := protocol.NewConn(out)
 
 			go buildNewSession(chatHub, in)
-			go func() { peer.SendHandshake(tc.name, protocol.ProtocolVersion) }()
+			sendHandshakeInBackground(t, peer, tc.name, protocol.ProtocolVersion)
 
 			f, err := peer.Recv()
 			if err != nil {
