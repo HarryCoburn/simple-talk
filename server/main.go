@@ -27,11 +27,11 @@ func Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	serve(ln, ctx)
+	serve(ctx, ln)
 	return nil
 }
 
-func serve(ln net.Listener, ctx context.Context) {
+func serve(ctx context.Context, ln net.Listener) {
 
 	hub := newHub(protocol.ProtocolVersion)
 
@@ -44,8 +44,8 @@ func serve(ln net.Listener, ctx context.Context) {
 	go acceptLoop(ctx, hub, ln, stopped)
 
 	select {
-	case sig := <-ctx.Done():
-		log.Printf("received %v, shutting down", sig)
+	case <-ctx.Done():
+		log.Print("shutdown requested, shutting down")
 	case <-stopped:
 		// Listener died, tear down the rest
 		log.Print("stopped accepting connections, shutting down")
@@ -71,7 +71,7 @@ func acceptLoop(ctx context.Context, hub *Hub, ln net.Listener, stopped chan str
 			continue
 		}
 
-		go buildNewSession(context.Background(), hub, conn)
+		go buildNewSession(ctx, hub, conn)
 	}
 }
 

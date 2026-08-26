@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,7 +23,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	chatHub := newHub(protocol.ProtocolVersion)
 	chatHub.stop()
 
-	go buildNewSession(chatHub, serverSide)
+	go buildNewSession(context.Background(), chatHub, serverSide)
 	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatalf("Could not set a deadline: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestHandleNewConnReportsATakenName(t *testing.T) {
 
 	serverSide, clientSide := net.Pipe()
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
-	go buildNewSession(chatHub, serverSide)
+	go buildNewSession(context.Background(), chatHub, serverSide)
 
 	if err := clientSide.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatalf("Could not set a deadline: %v", err)
@@ -81,7 +82,7 @@ func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
 	exited := make(chan struct{})
-	go func() { buildNewSession(chatHub, serverSide); close(exited) }()
+	go func() { buildNewSession(context.Background(), chatHub, serverSide); close(exited) }()
 
 	peer := protocol.NewConn(clientSide)
 	if err := peer.SendHandshake("Harry", protocol.ProtocolVersion); err != nil {
@@ -205,7 +206,7 @@ func TestHandleNewConnReportsAVersionMismatch(t *testing.T) {
 	t.Cleanup(func() { in.Close(); out.Close() })
 	peer := protocol.NewConn(out)
 
-	go buildNewSession(chatHub, in)
+	go buildNewSession(context.Background(), chatHub, in)
 	sendHandshakeInBackground(t, peer, "Harry", "0.0.0")
 
 	f, err := peer.Recv()
@@ -249,7 +250,7 @@ func TestHandleNewConnReportsAnInvalidName(t *testing.T) {
 			t.Cleanup(func() { in.Close(); out.Close() })
 			peer := protocol.NewConn(out)
 
-			go buildNewSession(chatHub, in)
+			go buildNewSession(context.Background(), chatHub, in)
 			sendHandshakeInBackground(t, peer, tc.name, protocol.ProtocolVersion)
 
 			f, err := peer.Recv()
