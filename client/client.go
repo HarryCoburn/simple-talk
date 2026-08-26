@@ -14,12 +14,20 @@ import (
 
 const userNamePrompt string = "Please state your username: "
 
-// main connects to the chat server, sends a handshake through setUserName, then runs a receive loop
-// and send loop.
-func Run() error {
-	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
+// DefaultAddr is the server the client dials when none is given.
+const DefaultAddr = "localhost:2069"
+
+// Run connects to the server at addr, negotiates a username, then runs a
+// receive loop and a send loop.
+//
+// addr is host:port in net.Dial's form, so an IPv6 literal needs brackets:
+// "[::1]:2069". The name is the whole point of taking it as a parameter --
+// until it was one, nothing could reach a server on another machine, and
+// nothing could test this dial.
+func Run(addr string) error {
+	bareConn, err := net.Dial("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("client could not dial to the server: %v", err)
+		return fmt.Errorf("client could not dial %s: %w", addr, err)
 	}
 	conn := protocol.NewConn(bareConn)
 	defer conn.Close() // This will also close bareConn

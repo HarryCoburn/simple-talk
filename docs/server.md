@@ -1,8 +1,14 @@
 # Server for SimpleTalk
 
 The server directory holds the server for the program. Activated by ./cmd/server/main.go, which
-does nothing but call Run() and report the error it returns. Nothing in this package exits the
+parses flags, calls Run() and reports the error it returns. Nothing in this package exits the
 process on its caller's behalf.
+
+    simpletalk-server -port 2069
+
+-port defaults to server.DefaultPort. The command turns it into a listen address with an empty
+host, so the server accepts on every interface -- which is what reaching it from another machine
+needs. Bind to one interface by calling Run with an explicit host instead.
 
 The shape is one hub goroutine owning all shared state, reached only by channels, with two
 goroutines per connected session. That buys freedom from mutexes over the session map and makes
@@ -13,7 +19,7 @@ builds reaches the hub, the accept loop, and any handshake still in flight.
 
 Run() is the entry point, and is split into three so it can be tested.
 
-- Run() calls run() with the hardcoded address :2069 and the real signal.NotifyContext.
+- Run(addr) calls run() with that address and the real signal.NotifyContext.
 - run(ctx, addr, notify) opens the TCP listener and returns an error if it cannot. Taking the
   address as a parameter is what lets a test pick a port it knows is busy.
 - runOn(ctx, ln, notify) wires os.Interrupt and syscall.SIGTERM to a context, then calls serve().

@@ -21,15 +21,20 @@ import (
 // test binary having to receive any.
 type notifyFunc func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 
-// Run starts the server and blocks until an interrupt or SIGTERM
-func Run() error {
-	return run(context.Background(), ":2069", signal.NotifyContext)
+// DefaultPort is the port the server listens on when none is given.
+const DefaultPort = "2069"
+
+// Run starts the server on addr and blocks until an interrupt or SIGTERM.
+// addr is a listen address in net.Listen's form: an empty host, as in ":2069",
+// accepts on every interface, which is what reaching the server from another
+// machine needs.
+func Run(addr string) error {
+	return run(context.Background(), addr, signal.NotifyContext)
 }
 
 // run opens the listener and hands it to runOn. Split from Run so a test can
 // name its own address rather than gambling on a fixed port being free.
 func run(ctx context.Context, addr string, notify notifyFunc) error {
-	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("could not open server listener: %w", err)
