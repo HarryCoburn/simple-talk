@@ -26,6 +26,10 @@ type commandHub interface {
 var _ commandHub = (*Hub)(nil)
 
 // cmdCtx is everything a command handler is allowed to touch.
+//
+// Receivers and parameters of this type are named cc, not ctx: commands is
+// where a real context.Context will want to be threaded, and the two reading
+// alike in the same function is the confusion worth avoiding up front.
 type cmdCtx struct {
 	session *Session   // Who ran the command.
 	hub     commandHub // For queries and for replying.
@@ -33,9 +37,9 @@ type cmdCtx struct {
 	roster  []string   // Sorted command names. For /help command to avoid circular dependency
 }
 
-// A cmdHandler runs one command. Replies to the caller go through ctx.reply;
+// A cmdHandler runs one command. Replies to the caller go through cc.reply;
 // anything the whole room should see goes to hub.broadcastFrame.
-type cmdHandler func(ctx cmdCtx) error
+type cmdHandler func(cc cmdCtx) error
 
 // The command table. Names are lowercase and carry no leading slash — the
 // client strips that before building the frame.
@@ -56,21 +60,21 @@ var commandNames = sync.OnceValue(func() []string {
 })
 
 // reply sends a system message to the caller alone.
-func (ctx cmdCtx) reply(format string, a ...any) error {
+func (cc cmdCtx) reply(format string, a ...any) error {
 	f, err := protocol.NewSystemFrame(fmt.Sprintf(format, a...))
 	if err != nil {
 		return err
 	}
-	return ctx.hub.sendTo(ctx.session, f)
+	return cc.hub.sendTo(cc.session, f)
 }
 
 // replyError sends an error frame to the caller alone.
-func (ctx cmdCtx) replyError(format string, a ...any) error {
+func (cc cmdCtx) replyError(format string, a ...any) error {
 	f, err := protocol.NewErrorFrame(fmt.Sprintf(format, a...))
 	if err != nil {
 		return err
 	}
-	return ctx.hub.sendTo(ctx.session, f)
+	return cc.hub.sendTo(cc.session, f)
 }
 
 // dispatchCommand decodes a command frame and runs the matching handler.
@@ -86,35 +90,35 @@ func dispatchCommand(c *Session, hub commandHub, f protocol.Frame) error {
 	}
 
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
-	ctx := cmdCtx{session: c, hub: hub, args: cmd.Args, roster: commandNames()}
+	cc := cmdCtx{session: c, hub: hub, args: cmd.Args, roster: commandNames()}
 
 	if name == "" {
-		return ctx.replyError("no command given")
+		return cc.replyError("no command given")
 	}
 
 	handler, ok := commands[name]
 	if !ok {
-		return ctx.replyError("unknown command %q. Try help for a list.", name)
+		return cc.replyError("unknown command %q. Try help for a list.", name)
 	}
-	return handler(ctx)
+	return handler(cc)
 }
 
 // cmdWho lists everyone currently connected.
-func cmdWho(ctx cmdCtx) error {
-	names, err := ctx.hub.sessionNames()
+func cmdWho(cc cmdCtx) error {
+	names, err := cc.hub.sessionNames()
 	if err != nil {
 		return err
 	}
 	if len(names) == 0 {
 		// The caller is registered, so an empty roster means they were dropped between
 		// issuing the command and the hub reading the list
-		return ctx.reply("Nobody is connected.")
+		return cc.reply("Nobody is connected.")
 	}
-	return ctx.reply("Connected (%d): %s", len(names), strings.Join(names, ", "))
+	return cc.reply("Connected (%d): %s", len(names), strings.Join(names, ", "))
 }
 
 // cmdHelp lists the available commands.
-func cmdHelp(ctx cmdCtx) error {
+func cmdHelp(cc cmdCtx) error {
 
-	return ctx.reply("Commands: %s", strings.Join(ctx.roster, ", "))
+	return cc.reply("Commands: %s", strings.Join(cc.roster, ", "))
 }
