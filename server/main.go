@@ -69,25 +69,25 @@ func acceptLoop(hub *Hub, ln net.Listener, stopped chan struct{}) {
 			log.Printf("Error accepting a connection: %v\n", err)
 			continue
 		}
-		go handleNewConn(hub, conn)
+		go buildNewSession(hub, conn)
 	}
 }
 
-func handleNewConn(hub *Hub, conn net.Conn) {
+func buildNewSession(hub *Hub, conn net.Conn) {
 	// A connection is detected. Make the session
-	fullc := protocol.NewConn(conn)
-	clientName, err := verifyName(fullc, hub.version)
+	pConn := protocol.NewConn(conn)
+	clientName, err := verifyName(pConn, hub.version)
 	if err != nil {
 		log.Print(err)
 		// A version mismatch is the client's to fix, so tell it what happened
 		// instead of hanging up on a bare EOF. The client's own version is not
 		// echoed back: it is unvalidated input and would print to a terminal.
 		if errors.Is(err, ErrVersionMismatch) {
-			if sendErr := fullc.SendError(fmt.Sprintf("this server speaks version %s. Update your client.", hub.version)); sendErr != nil {
+			if sendErr := pConn.SendError(fmt.Sprintf("this server speaks version %s. Update your client.", hub.version)); sendErr != nil {
 				log.Printf("could not report the version mismatch: %v", sendErr)
 			}
 			if errors.Is(err, ErrNameTaken) {
-				if sendErr := fullc.SendError("this name is already taken. Please choose another."); sendErr != nil {
+				if sendErr := pConn.SendError("this name is already taken. Please choose another."); sendErr != nil {
 					log.Printf("could not report a name was already taken: %v", sendErr)
 				}
 			}
@@ -95,28 +95,28 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 		// A name the rules reject is the client's to fix too, so it gets the
 		// reason rather than a bare EOF. recvHandshake already handles KindError.
 		if reason, ok := nameRejection(err); ok {
-			if sendErr := fullc.SendError(reason); sendErr != nil {
+			if sendErr := pConn.SendError(reason); sendErr != nil {
 				log.Printf("could not report an invalid name: %v", sendErr)
 			}
 		}
-		fullc.Close()
+		pConn.Close()
 		return
 	}
 
-	sess := newSession(fullc, clientName)
+	sess := newSession(pConn, clientName)
 
 	if err := hub.registerSession(sess); err != nil {
 		if errors.Is(err, ErrNameTaken) {
-			if sendErr := fullc.SendError(err.Error()); sendErr != nil {
+			if sendErr := pConn.SendError(err.Error()); sendErr != nil {
 				log.Printf("could not report taken name to %s: %v", clientName, sendErr)
 			}
 		}
-		fullc.Close()
+		pConn.Close()
 		return
 	}
 
 	// Send handshake ack
-	if err := fullc.SendHandshakeAck(clientName); err != nil {
+	if err := pConn.SendHandshakeAck(clientName); err != nil {
 		log.Printf("handshake ack to %s has failed: %v", clientName, err)
 		sess.leave(hub)
 		return

@@ -50,6 +50,9 @@ func (c *Conn) SendFrame(f Frame) error {
 }
 
 func (c *Conn) SendHandshake(name string, version string) error {
+	if version != ProtocolVersion {
+		return errors.New("Protocol version do not match. Upgrade your software.")
+	}
 	f, err := newHandshakeFrame(name, version)
 	if err != nil {
 		return err
