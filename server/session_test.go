@@ -244,7 +244,7 @@ func TestReadLoopSurvivesAPanickingHandler(t *testing.T) {
 	// first call, so prime it before adding this one: otherwise the cache can
 	// capture "boom" and /help reports it for the rest of the run.
 	_ = commandNames()
-	commands["boom"] = func(cmdCtx) error { panic("handler exploded") }
+	commands["boom"] = func(cmdEnv) error { panic("handler exploded") }
 	t.Cleanup(func() { delete(commands, "boom") })
 
 	chatHub, _ := newTestHub(t)
