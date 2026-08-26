@@ -48,7 +48,7 @@ func (c *Session) guard(hub *Hub, loop string) {
 		return
 	}
 	log.Printf("panic in the %s for %s: %v\n%s", loop, c.Name, r, debug.Stack())
-	c.leave(hub)
+	hub.unregisterSession(c)
 }
 
 func (c *Session) writeLoop(hub *Hub) {
@@ -61,7 +61,7 @@ func (c *Session) writeLoop(hub *Hub) {
 		if err := c.Conn.SendFrame(frame); err != nil {
 			log.Printf("write to %s failed: %v", c.Name, err)
 			// Tell the hub to close since Out won't drain after this loop stops.
-			c.leave(hub)
+			hub.unregisterSession(c)
 			return
 		}
 	}
@@ -80,14 +80,14 @@ func (c *Session) readLoop(hub *Hub) {
 				log.Printf("discarding unusable frame from %s: %v", c.Name, err)
 				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
 					log.Printf("could not report frame error to %s: %v", c.Name, sendErr)
-					c.leave(hub)
+					hub.unregisterSession(c)
 					return
 				}
 				continue
 			default:
 				log.Printf("connection broke, not EOF: %v", err)
 			}
-			c.leave(hub)
+			hub.unregisterSession(c)
 			return
 		}
 
@@ -96,7 +96,7 @@ func (c *Session) readLoop(hub *Hub) {
 			if err := c.checkChat(frame); err != nil {
 				if sendErr := c.Conn.SendError(err.Error()); sendErr != nil {
 					log.Printf("could not report a rejected message to %s: %v", c.Name, sendErr)
-					c.leave(hub)
+					hub.unregisterSession(c)
 					return
 				}
 				continue
@@ -121,10 +121,6 @@ func (c *Session) readLoop(hub *Hub) {
 
 		}
 	}
-}
-
-func (c *Session) leave(hub *Hub) {
-	hub.unregisterSession(c)
 }
 
 // checkChat applies the message rules to an incoming chat frame. A malformed

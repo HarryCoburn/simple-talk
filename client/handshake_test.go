@@ -8,40 +8,10 @@ import (
 )
 
 // Tests for the handshake: picking a username the server will accept.
-
-func TestCleanUserName(t *testing.T) {
-	cases := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr bool
-	}{
-		{name: "plain name passes through", input: "alice", want: "alice"},
-		{name: "surrounding whitespace is trimmed", input: "  alice  ", want: "alice"},
-		{name: "tabs and newlines are trimmed", input: "\t alice \n", want: "alice"},
-		{name: "inner spaces are kept", input: " alice smith ", want: "alice smith"},
-		{name: "empty input is rejected", input: "", wantErr: true},
-		{name: "whitespace-only input is rejected", input: "   \t ", wantErr: true},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := cleanUserName(tc.input)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("cleanUserName(%q) = %q, wanted an error", tc.input, got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("cleanUserName(%q) returned an unexpected error: %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("cleanUserName(%q) = %q, wanted %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
+//
+// The name rules themselves are internal/validate's to test; negotiateName now
+// calls validate.Name directly, so what is left to cover here is the prompting
+// loop around it.
 
 func TestSetUserNameReturnsTheAckedName(t *testing.T) {
 	pipe := newTestPipe(t)

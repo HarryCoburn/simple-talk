@@ -163,20 +163,20 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 	// Send handshake ack
 	if err := pConn.SendHandshakeAck(clientName); err != nil {
 		log.Printf("handshake ack to %s has failed: %v", clientName, err)
-		sess.leave(hub)
+		hub.unregisterSession(sess)
 		return
 	}
 
 	// Announce successful connection to others.
-	f, err := announceConnection(sess.Name)
+	f, err := announcePresence(sess.Name, eventConnected)
 	if err != nil {
 		log.Printf("could not build connect announcement for %s: %v", sess.Name, err)
-		sess.leave(hub)
+		hub.unregisterSession(sess)
 		return
 	}
 	if err := hub.broadcastFrame(f); err != nil {
 		log.Printf("could not announce %s: %v", sess.Name, err)
-		sess.leave(hub)
+		hub.unregisterSession(sess)
 		return
 	}
 
@@ -243,20 +243,15 @@ func nameRejection(err error) (string, bool) {
 	return "", false
 }
 
-func announceConnection(name string) (protocol.Frame, error) {
-	msg := fmt.Sprintf("%s has connected.", name)
-	f, err := protocol.NewSystemFrame(msg)
-	if err != nil {
-		return protocol.Frame{}, err
-	}
-	return f, nil
-}
+// The two things that can happen to a session's presence, as the room hears
+// them. Constants rather than bare strings so a caller cannot invent a third.
+const (
+	eventConnected    = "connected"
+	eventDisconnected = "disconnected"
+)
 
-func announceDisconnection(name string) (protocol.Frame, error) {
-	msg := fmt.Sprintf("%s has disconnected.", name)
-	f, err := protocol.NewSystemFrame(msg)
-	if err != nil {
-		return protocol.Frame{}, err
-	}
-	return f, nil
+// announcePresence builds the system frame telling the room a session arrived
+// or left. The two differed only in a verb.
+func announcePresence(name, event string) (protocol.Frame, error) {
+	return protocol.NewSystemFrame(fmt.Sprintf("%s has %s.", name, event))
 }

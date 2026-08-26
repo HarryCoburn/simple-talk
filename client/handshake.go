@@ -21,7 +21,7 @@ func negotiateName(conn *protocol.Conn, inputScanner *bufio.Scanner, version str
 		if inputScanner.Scan() {
 			input := inputScanner.Text()
 			// Make sure username meets our rules
-			cleaned, err := cleanUserName(input)
+			cleaned, err := validate.Name(input)
 			if err != nil {
 				fmt.Println("Error in input. Try again")
 				fmt.Print(userNamePrompt)
@@ -73,11 +73,4 @@ func recvHandshake(conn *protocol.Conn) (string, error) {
 	}
 	// Valid.
 	return ack.Name, nil
-}
-
-// cleanUserName takes a string from the username prompt and sanitizes the input before
-// sending it to the server for further verification.
-func cleanUserName(name string) (string, error) {
-	// TODO, consider more validation rules. Pass for now with assumptions for MVP.
-	return validate.Name(name)
 }

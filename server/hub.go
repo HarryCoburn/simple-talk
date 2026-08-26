@@ -95,7 +95,7 @@ func (h *Hub) run() {
 				continue // Session is already unregistered.
 			}
 			h.closeSession(c)
-			f, err := announceDisconnection(c.Name)
+			f, err := announcePresence(c.Name, eventDisconnected)
 			if err != nil {
 				log.Printf("could not build disconnect announcement for %s: %v", c.Name, err)
 			}
@@ -200,11 +200,6 @@ func submit[T any](h *Hub, fn func(*Hub) T) (T, bool) {
 	}
 }
 
-// query runs functions on hub that do not mutate hub.
-func query[T any](h *Hub, fn func(*Hub) T) (T, bool) {
-	return submit(h, fn)
-}
-
 // exec mutates the hub state from another goroutine
 func exec(h *Hub, fn func(*Hub)) bool {
 	_, ok := submit(h, func(h *Hub) struct{} {
@@ -215,7 +210,7 @@ func exec(h *Hub, fn func(*Hub)) bool {
 }
 
 func (h *Hub) sessionNames() ([]string, error) {
-	names, ok := query(h, func(h *Hub) []string {
+	names, ok := submit(h, func(h *Hub) []string {
 		names := make([]string, 0, len(h.sessions))
 		for _, c := range h.sessions {
 			// The roster shows the name as the user typed it, not the folded
