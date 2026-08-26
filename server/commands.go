@@ -44,6 +44,8 @@ var commands = map[string]cmdHandler{
 	"help": cmdHelp,
 }
 
+// commandNames is used by /help to send a list of all of the names of the commands.
+// This is a read-only variable.
 var commandNames = sync.OnceValue(func() []string {
 	names := make([]string, 0, len(commands))
 	for name := range commands {

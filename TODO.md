@@ -23,11 +23,11 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 - [X] **Both `SetReadDeadline` calls in `verifyName` drop their error**
       (`server/main.go:134,139`). `errcheck` would flag them.
-- [ ] **`commandNames()` hands every caller the same backing slice** (`server/commands.go:47`).
+- [X] **`commandNames()` hands every caller the same backing slice** (`server/commands.go:47`).
       `sync.OnceValue` memoises the slice header, so a handler that sorts or appends to
       `ctx.roster` corrupts it for every later caller. `slices.Clone` on return, or say
       read-only on the var.
-- [ ] **An invalid name is a silent hangup.** A *taken* name gets an error frame
+- [X] **An invalid name is a silent hangup.** A *taken* name gets an error frame
       (`server/main.go:99`), but a name that fails `validate.Name` inside `verifyName` only
       gets logged — the frame is built for `ErrVersionMismatch` alone (`server/main.go:87`).
       The client sees a bare EOF and prints "receive error while setting username".

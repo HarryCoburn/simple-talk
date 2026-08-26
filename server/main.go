@@ -88,6 +88,11 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 			if sendErr := fullc.SendError(fmt.Sprintf("this server speaks version %s. Update your client.", hub.version)); sendErr != nil {
 				log.Printf("could not report the version mismatch: %v", sendErr)
 			}
+			if errors.Is(err, ErrNameTaken) {
+				if sendErr := fullc.SendError("this name is already taken. Please choose another."); sendErr != nil {
+					log.Printf("could not report a name was already taken: %v", sendErr)
+				}
+			}
 		}
 		fullc.Close()
 		return
