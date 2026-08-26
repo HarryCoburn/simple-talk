@@ -37,13 +37,13 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 - [X] **`func (ctx cmdCtx)` occupies the name `context.Context` needs**
       (`server/commands.go:57,66`). Rename the receiver before the context conversion below,
       not during it — commands is exactly where a real `ctx` will want to be threaded.
-- [ ] **Write down the `Out` ownership rule on the field itself** (`server/session.go:22`).
+- [X] **Write down the `Out` ownership rule on the field itself** (`server/session.go:22`).
       `closeSession` closes `c.Out` while `deliverTo` sends to it; that is safe *only*
       because both run in the hub goroutine (`sendTo` reaches `deliverTo` through `exec`,
       never directly). A send added from anywhere else is a send-on-closed-channel panic in
       production, not a test failure. The rule holds today and is explained in `hub.go`'s
       comments; the person who breaks it will be reading the struct field.
-- [ ] **Rewrite `docs/server.md`.** It has drifted badly: it documents a `NameTaken` channel that
+- [X] **Rewrite `docs/server.md`.** It has drifted badly: it documents a `NameTaken` channel that
       does not exist, describes `Query` as "only returns the length of the client list" (it is now
       the generic `tasks` channel with `submit`/`query`/`exec`), credits `broadcastFrame` with decorating
       chat frames (decoration happens in `readInput`), leaves `## session.go` empty, and never

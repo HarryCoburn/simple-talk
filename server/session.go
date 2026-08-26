@@ -17,10 +17,13 @@ import (
 // queue of frames waiting to go out to them. The client program at the other
 // end is not modelled here — anything that speaks the protocol gets a Session.
 type Session struct {
-	Conn *protocol.Conn      // The protocol connection
-	Name string              // The username of the Session
-	Out  chan protocol.Frame // The message channel queue
-	key  string              // The folded name this session is registered under. Set by the hub at registration.
+	Conn *protocol.Conn // The protocol connection
+	Name string         // The username of the Session
+	// Out is accessed and closed only from the hub goroutine
+	// Sends and closes must go through deliverTo/closeSession, called via exec.
+	// Otherwise, there is a risk of a send-on-closed-channel panic.
+	Out chan protocol.Frame // The message channel queue
+	key string              // The folded name this session is registered under. Set by the hub at registration.
 }
 
 func newSession(conn *protocol.Conn, name string) *Session {
