@@ -1,7 +1,15 @@
 package main
 
-import "github.com/HarryCoburn/simple-talk/client"
+import (
+	"log"
+
+	"github.com/HarryCoburn/simple-talk/client"
+)
 
 func main() {
-	client.Run()
+	// The library reports; the command decides. log.Fatal belongs here, where
+	// exiting the process is the caller's own business.
+	if err := client.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
