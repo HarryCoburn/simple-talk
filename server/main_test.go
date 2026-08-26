@@ -245,3 +245,44 @@ func TestRunReturnsAnErrorWhenThePortIsInUse(t *testing.T) {
 		t.Fatal("Run did not return with :2069 already taken, wanted an error")
 	}
 }
+
+// A connection accepted after teardown began has nowhere to go: the hub is
+// closing sessions, not registering them. The accept loop hands it back rather
+// than starting a handshake that cannot finish.
+func TestAcceptLoopRefusesAConnectionOnceCancelled(t *testing.T) {
+	chatHub, _ := newTestHub(t)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Could not open the listener: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	// Cancelled before the loop starts, so the first accepted connection takes
+	// the guard. The listener stays open: closing it is the other exit path,
+	// and this test is about the ctx one.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	stopped := make(chan struct{})
+	go acceptLoop(ctx, chatHub, ln, stopped)
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Could not dial the listener: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("acceptLoop did not exit after its context was cancelled")
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("Could not set a read deadline: %v", err)
+	}
+	if _, err := protocol.NewConn(conn).Recv(); err == nil {
+		t.Error("The accepted connection stayed open after cancellation, wanted it closed")
+	}
+}
