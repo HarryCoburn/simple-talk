@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -185,4 +186,37 @@ func captureLog(t *testing.T) *lockedBuffer {
 	log.SetOutput(buf)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	return buf
+}
+
+// inBackground runs a blocking send on its own goroutine and reports its error
+// at the end of the test instead of dropping it.
+//
+// The goroutine is not optional: net.Pipe is unbuffered, so a send does not
+// return until the test reads it. Dropping the error is what turns a send that
+// never happened into the reader's own timeout, thirty seconds later, naming
+// nothing about the send that caused it. The wait is bounded because a test
+// that has already failed may never read the pipe at all.
+func inBackground(t *testing.T, what string, send func() error) {
+	t.Helper()
+	errc := make(chan error, 1)
+	go func() { errc <- send() }()
+	t.Cleanup(func() {
+		select {
+		case err := <-errc:
+			if err != nil {
+				t.Errorf("Could not send %s: %v", what, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Errorf("%s was never sent", what)
+		}
+	})
+}
+
+// sendHandshakeInBackground is inBackground for the handshake every server-side
+// test opens with.
+func sendHandshakeInBackground(t *testing.T, peer *protocol.Conn, name, version string) {
+	t.Helper()
+	inBackground(t, fmt.Sprintf("the handshake %q at version %q", name, version), func() error {
+		return peer.SendHandshake(name, version)
+	})
 }

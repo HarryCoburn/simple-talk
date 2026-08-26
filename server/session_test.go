@@ -91,7 +91,10 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 	// the trailing newline, so the session must stay alive.
 	oversized := append([]byte(`{"kind":"chat","payload":{"from":"test","text":"`), bytes.Repeat([]byte("x"), protocol.MaxFrameSize)...)
 	oversized = append(oversized, []byte("\"}}\n")...)
-	go func() { testHelp.OutConn.Write(oversized) }()
+	inBackground(t, "the oversized frame", func() error {
+		_, err := testHelp.OutConn.Write(oversized)
+		return err
+	})
 
 	f, err := testHelp.Peer.Recv()
 	if err != nil {
