@@ -10,11 +10,11 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/validate"
 )
 
-// sendHandshake sends handshake information to the server. Currently, it only verifies
+// negotiateName sends handshake information to the server. Currently, it only verifies
 // that the user name given is legal and doesn't clash with another name on the server.
 // Receipt of a HandshakeAck frame proves the server verified the name and tells the client
 // that it is safe to start sendLoop and receiveLoop.
-func sendHandshake(conn *protocol.Conn, inputScanner *bufio.Scanner, version string) (string, error) {
+func negotiateName(conn *protocol.Conn, inputScanner *bufio.Scanner, version string) (string, error) {
 	fmt.Print(userNamePrompt)
 	for { // To handle reasking if there's a problem. Break if successful.
 		// Get a name and clean it properly

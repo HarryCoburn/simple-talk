@@ -107,7 +107,7 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 	pConn := protocol.NewConn(conn)
 
 	// A shutdown has to reach a handshake parked in Recv. Closing the socket is
-	// the only thing that unblocks it: verifyName's read deadline is thirty
+	// the only thing that unblocks it: acceptHandshake's read deadline is thirty
 	// seconds out and Recv has no context of its own. The window ends at
 	// registration, because from there the socket belongs to hub.closeSession
 	// and a second closer would only muddy that ownership.
@@ -116,7 +116,7 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 	stopClose := context.AfterFunc(hsCtx, func() { pConn.Close() })
 	defer stopClose()
 
-	clientName, err := verifyName(pConn, hub.version)
+	clientName, err := acceptHandshake(pConn, hub.version)
 	if err != nil {
 		log.Print(err)
 		// A version mismatch is the client's to fix, so tell it what happened
@@ -181,10 +181,10 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 	}
 
 	go sess.writeLoop(hub)
-	go sess.readInput(hub)
+	go sess.readLoop(hub)
 }
 
-func verifyName(fullc *protocol.Conn, version string) (string, error) {
+func acceptHandshake(fullc *protocol.Conn, version string) (string, error) {
 	// Get the frame for name entry.
 	if err := fullc.SetReadDeadline(time.Now().Add(protocol.HandshakeTimeout)); err != nil {
 		return "", fmt.Errorf("could not set a read deadline: %w", err)
@@ -228,7 +228,7 @@ func verifyName(fullc *protocol.Conn, version string) (string, error) {
 //
 // The reasons are matched against a fixed list rather than passing err.Error()
 // through: every message here is a constant that never embeds the name, so a
-// hostile name cannot get itself echoed to a terminal. verifyName's other
+// hostile name cannot get itself echoed to a terminal. acceptHandshake's other
 // errors do quote their input, which is exactly why they are not sent.
 func nameRejection(err error) (string, bool) {
 	for _, reason := range []error{

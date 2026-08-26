@@ -67,7 +67,7 @@ func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 func TestReadLoop(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
-	go testHelp.Session.readInput(chatHub)
+	go testHelp.Session.readLoop(chatHub)
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestReadLoop(t *testing.T) {
 func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
-	go testHelp.Session.readInput(chatHub)
+	go testHelp.Session.readLoop(chatHub)
 
 	// A frame past MaxFrameSize is recoverable: protocol.Conn resynchronizes on
 	// the trailing newline, so the session must stay alive.
@@ -124,7 +124,7 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
-	go testHelp.Session.readInput(chatHub)
+	go testHelp.Session.readLoop(chatHub)
 
 	// A kind this server does not handle must not tear down the connection.
 	if err := testHelp.Peer.SendHandshake("test", protocol.ProtocolVersion); err != nil {
@@ -149,7 +149,7 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
-	go testHelp.Session.readInput(chatHub)
+	go testHelp.Session.readLoop(chatHub)
 	testHelp.OutConn.Close()
 	var got *Session
 	select {
@@ -165,7 +165,7 @@ func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
-	go testHelp.Session.readInput(chatHub)
+	go testHelp.Session.readLoop(chatHub)
 	testHelp.InConn.Close()
 	var got *Session
 	select {
@@ -215,7 +215,7 @@ func TestReadClientInputRejectsADisallowedMessage(t *testing.T) {
 	testHelp.Session.Name = "Alice"
 	chatHub, _ := newTestHub(t)
 	mustRegister(t, chatHub, testHelp.Session)
-	go testHelp.Session.readInput(chatHub)
+	go testHelp.Session.readLoop(chatHub)
 
 	if err := testHelp.Peer.SendChat("Alice", "clear\x1b[2J"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
@@ -253,7 +253,7 @@ func TestReadLoopSurvivesAPanickingHandler(t *testing.T) {
 	mustRegister(t, chatHub, victim.Session)
 	bystander := joinRoom(t, chatHub, "Bob")
 
-	go victim.Session.readInput(chatHub)
+	go victim.Session.readLoop(chatHub)
 	if err := victim.Peer.SendCommand("boom", nil); err != nil {
 		t.Fatalf("Could not send the command: %v", err)
 	}

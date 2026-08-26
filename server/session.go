@@ -67,7 +67,7 @@ func (c *Session) writeLoop(hub *Hub) {
 	}
 }
 
-func (c *Session) readInput(hub *Hub) {
+func (c *Session) readLoop(hub *Hub) {
 	defer c.guard(hub, "read loop")
 	for {
 		// Reads what the user sends. Closes the session safely if there is a problem with reading.
@@ -138,6 +138,9 @@ func (c *Session) checkChat(f protocol.Frame) error {
 	_, err := validate.Message(chat.Text)
 	return err
 }
+
+const messageFormat = "<%s> %s"
+const poseFormat = "%s %s"
 
 func decorateChat(sender string, f protocol.Frame) (protocol.Frame, error) {
 	var chat protocol.Chat

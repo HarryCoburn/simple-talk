@@ -21,9 +21,6 @@ var (
 	ErrVersionMismatch = errors.New("client and server versions do not match")
 )
 
-const messageFormat = "<%s> %s"
-const poseFormat = "%s %s"
-
 type registerReq struct {
 	session *Session
 	reply   chan error
@@ -51,7 +48,7 @@ type Hub struct {
 }
 
 // Create a new hub. Cancelling ctx tears the hub down, as stop does.
-func newHub(ctx context.Context, v string) *Hub {
+func newHub(ctx context.Context, version string) *Hub {
 	ctx, cancel := context.WithCancel(ctx)
 	hub := Hub{
 		register:   make(chan registerReq),
@@ -59,7 +56,7 @@ func newHub(ctx context.Context, v string) *Hub {
 		broadcast:  make(chan protocol.Frame),
 		tasks:      make(chan func(*Hub)),
 		sessions:   make(map[string]*Session),
-		version:    v,
+		version:    version,
 		ctx:        ctx,
 		cancel:     cancel,
 		finished:   make(chan struct{}),

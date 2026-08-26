@@ -27,7 +27,7 @@ func Run() error {
 	stdin := bufio.NewScanner(os.Stdin)
 
 	// Handshake
-	name, err := sendHandshake(conn, stdin, protocol.ProtocolVersion)
+	name, err := negotiateName(conn, stdin, protocol.ProtocolVersion)
 	if err != nil {
 		return fmt.Errorf("problem with setting username: %v", err)
 

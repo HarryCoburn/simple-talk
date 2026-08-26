@@ -60,7 +60,7 @@ func TestSetUserNameReturnsTheAckedName(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
+		name, err = negotiateName(pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
 	})
 
 	if err != nil {
@@ -96,7 +96,7 @@ func TestSetUserNameSendsTheClientVersion(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 	if err != nil {
 		t.Fatalf("sendHandshake returned an unexpected error: %v", err)
@@ -125,7 +125,7 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
+		name, err = negotiateName(pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
 	})
 
 	if err != nil {
@@ -157,7 +157,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		name, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -181,7 +181,7 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -203,7 +203,7 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = sendHandshake(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -218,7 +218,7 @@ func TestSetUserNameHandlesClosedInput(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = sendHandshake(pipe.Client, scannerOf(), protocol.ProtocolVersion)
+		name, err = negotiateName(pipe.Client, scannerOf(), protocol.ProtocolVersion)
 	})
 
 	if err != nil {

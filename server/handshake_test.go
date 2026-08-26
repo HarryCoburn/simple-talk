@@ -108,7 +108,7 @@ func TestHandleNewConnExitsWhenHubStopsMidHandshake(t *testing.T) {
 
 // The server is the authority on names: a hand-written client that skips the
 // prompt's rules is rejected at the handshake.
-func TestVerifyNameRejectsBadNames(t *testing.T) {
+func TestAcceptHandshakeRejectsBadNames(t *testing.T) {
 	cases := []struct {
 		desc string
 		name string
@@ -129,9 +129,9 @@ func TestVerifyNameRejectsBadNames(t *testing.T) {
 
 			sendHandshakeInBackground(t, peer, tc.name, protocol.ProtocolVersion)
 
-			got, err := verifyName(server, protocol.ProtocolVersion)
+			got, err := acceptHandshake(server, protocol.ProtocolVersion)
 			if err == nil {
-				t.Fatalf("verifyName accepted %q as %q, wanted a rejection", tc.name, got)
+				t.Fatalf("acceptHandshake accepted %q as %q, wanted a rejection", tc.name, got)
 			}
 		})
 	}
@@ -139,7 +139,7 @@ func TestVerifyNameRejectsBadNames(t *testing.T) {
 
 // The version is checked before the name: a client built against a different
 // protocol cannot be talked to, whatever it calls itself.
-func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
+func TestAcceptHandshakeRejectsAVersionMismatch(t *testing.T) {
 	cases := []struct {
 		desc    string
 		version string
@@ -157,12 +157,12 @@ func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
 
 			sendHandshakeInBackground(t, peer, "Harry", tc.version)
 
-			got, err := verifyName(server, protocol.ProtocolVersion)
+			got, err := acceptHandshake(server, protocol.ProtocolVersion)
 			if err == nil {
-				t.Fatalf("verifyName accepted version %q as %q, wanted a rejection", tc.version, got)
+				t.Fatalf("acceptHandshake accepted version %q as %q, wanted a rejection", tc.version, got)
 			}
 			if !errors.Is(err, ErrVersionMismatch) {
-				t.Errorf("verifyName rejected version %q with %v, wanted %v", tc.version, err, ErrVersionMismatch)
+				t.Errorf("acceptHandshake rejected version %q with %v, wanted %v", tc.version, err, ErrVersionMismatch)
 			}
 		})
 	}
@@ -171,7 +171,7 @@ func TestVerifyNameRejectsAVersionMismatch(t *testing.T) {
 // The version checked is the one the server was built with, not a constant
 // baked into the check, so a server running an older build turns away a client
 // on today's version.
-func TestVerifyNameChecksTheVersionItWasGiven(t *testing.T) {
+func TestAcceptHandshakeChecksTheVersionItWasGiven(t *testing.T) {
 	in, out := net.Pipe()
 	t.Cleanup(func() { in.Close(); out.Close() })
 	server := protocol.NewConn(in)
@@ -179,13 +179,13 @@ func TestVerifyNameChecksTheVersionItWasGiven(t *testing.T) {
 
 	sendHandshakeInBackground(t, peer, "Harry", protocol.ProtocolVersion)
 
-	if got, err := verifyName(server, "9.9.9"); !errors.Is(err, ErrVersionMismatch) {
-		t.Fatalf("verifyName returned %q, %v against a server on 9.9.9, wanted %v", got, err, ErrVersionMismatch)
+	if got, err := acceptHandshake(server, "9.9.9"); !errors.Is(err, ErrVersionMismatch) {
+		t.Fatalf("acceptHandshake returned %q, %v against a server on 9.9.9, wanted %v", got, err, ErrVersionMismatch)
 	}
 }
 
 // A matching version is waved through and the name is returned as validated.
-func TestVerifyNameAcceptsAMatchingVersion(t *testing.T) {
+func TestAcceptHandshakeAcceptsAMatchingVersion(t *testing.T) {
 	in, out := net.Pipe()
 	t.Cleanup(func() { in.Close(); out.Close() })
 	server := protocol.NewConn(in)
@@ -193,12 +193,12 @@ func TestVerifyNameAcceptsAMatchingVersion(t *testing.T) {
 
 	sendHandshakeInBackground(t, peer, "  Harry  ", protocol.ProtocolVersion)
 
-	got, err := verifyName(server, protocol.ProtocolVersion)
+	got, err := acceptHandshake(server, protocol.ProtocolVersion)
 	if err != nil {
-		t.Fatalf("verifyName rejected a matching version: %v", err)
+		t.Fatalf("acceptHandshake rejected a matching version: %v", err)
 	}
 	if got != "Harry" {
-		t.Errorf("verifyName returned %q, wanted the cleaned %q", got, "Harry")
+		t.Errorf("acceptHandshake returned %q, wanted the cleaned %q", got, "Harry")
 	}
 }
 

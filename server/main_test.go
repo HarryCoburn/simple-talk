@@ -23,11 +23,11 @@ func TestEndtoEnd(t *testing.T) {
 
 	mustRegister(t, chatHub, alice.Session)
 	go alice.Session.writeLoop(chatHub)
-	go alice.Session.readInput(chatHub)
+	go alice.Session.readLoop(chatHub)
 
 	mustRegister(t, chatHub, bob.Session)
 	go bob.Session.writeLoop(chatHub)
-	go bob.Session.readInput(chatHub)
+	go bob.Session.readLoop(chatHub)
 
 	// Bound the reads, so a regression fails this test instead of hanging the
 	// whole binary until the package timeout panics.

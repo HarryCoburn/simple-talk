@@ -24,30 +24,6 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P1 — cheap now, expensive later
 
-- [X] **The protocol version is declared twice.** `serverVersion` (`server/main.go:18`) and
-      `clientVersion` (`client/main.go:16`) are both `"0.0.1"` and are compared for exact
-      equality across the wire (`server/main.go:154`), with nothing to make them drift
-      together. It is a property of the protocol, not of either end: one `protocol.Version`
-      in `internal/protocol`, read by both. Do this before the version field carries any
-      real weight — auth and structured payloads are both keyed to it.
-- [X] **`log.Fatal` inside library packages.** `server.Run` (`server/main.go:25`) and
-      `client.Run` (`client/main.go:23`) call `os.Exit` on their caller's behalf. Both
-      become `Run() error`, with `cmd/server` and `cmd/client` doing the `log.Fatal`. It is
-      also what makes `serve` testable today while `Run` is not.
-- [X] **`func (ctx cmdCtx)` occupies the name `context.Context` needs**
-      (`server/commands.go:57,66`). Rename the receiver before the context conversion below,
-      not during it — commands is exactly where a real `ctx` will want to be threaded.
-- [X] **Write down the `Out` ownership rule on the field itself** (`server/session.go:22`).
-      `closeSession` closes `c.Out` while `deliverTo` sends to it; that is safe *only*
-      because both run in the hub goroutine (`sendTo` reaches `deliverTo` through `exec`,
-      never directly). A send added from anywhere else is a send-on-closed-channel panic in
-      production, not a test failure. The rule holds today and is explained in `hub.go`'s
-      comments; the person who breaks it will be reading the struct field.
-- [X] **Rewrite `docs/server.md`.** It has drifted badly: it documents a `NameTaken` channel that
-      does not exist, describes `Query` as "only returns the length of the client list" (it is now
-      the generic `tasks` channel with `submit`/`query`/`exec`), credits `broadcastFrame` with decorating
-      chat frames (decoration happens in `readInput`), leaves `## session.go` empty, and never
-      mentions `commands.go` or `internal/validate`.
 
 ## P2 — before the next big feature
 
@@ -56,7 +32,7 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 - [ ] Note `/who` costs two hub round-trips (`sessionNames`, then `reply`).
 - [ ] **Names that point at the wrong thing** — the `Client` → `Session` problem again, one
       batch so the churn lands once:
-      - `verifyName` (`server/main.go:132`) → `acceptHandshake`. It rejects on version
+      - `acceptHandshake` (`server/main.go:132`) → `acceptHandshake`. It rejects on version
         mismatch before it looks at a name; that is its first branch. Its tests already live
         in `server/handshake_test.go`, which is the tell.
       - `sendHandshake` (`client/handshake.go:17`) → `negotiateName`. It sends, receives,
@@ -116,7 +92,7 @@ which wall you hit first.
    slower connections.
 4. No write deadline anywhere. `Conn.SendFrame` holds the mutex across the network write, so a
    client that stops reading blocks it indefinitely.
-5. No read deadline after the handshake — `verifyName` clears it (`server/main.go:134`) and nothing
+5. No read deadline after the handshake — `acceptHandshake` clears it (`server/main.go:134`) and nothing
    sets another. No ping/keepalive, so idle connections hold two goroutines and a socket forever.
 6. `/who` sorts inside the hub goroutine, so spamming it stalls all routing — a trivial DoS.
 7. No max connections, no accept rate limit, no per-client message rate limit. `log.Printf` on every

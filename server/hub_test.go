@@ -144,7 +144,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	exited := make(chan struct{})
-	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
+	go func() { testHelp.Session.readLoop(chatHub); close(exited) }()
 	// Nothing is draining chatHub.Broadcast, so readInput parks in the
 	// send select until Done releases it.
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
@@ -163,7 +163,7 @@ func TestDoneGuardsUnregister(t *testing.T) {
 	testHelp := setUpTest(t)
 	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	exited := make(chan struct{})
-	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
+	go func() { testHelp.Session.readLoop(chatHub); close(exited) }()
 	chatHub.stop()
 	testHelp.OutConn.Close()
 	select {
@@ -185,7 +185,7 @@ func TestTeardownCascade(t *testing.T) {
 		mustRegister(t, chatHub, c)
 		wg.Add(2)
 		go func() { defer wg.Done(); c.writeLoop(chatHub) }()
-		go func() { defer wg.Done(); c.readInput(chatHub) }()
+		go func() { defer wg.Done(); c.readLoop(chatHub) }()
 	}
 
 	allDone := make(chan struct{})
