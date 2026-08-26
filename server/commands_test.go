@@ -257,8 +257,8 @@ func TestDispatchPassesArgumentsToTheHandler(t *testing.T) {
 	alice := joinRoom(t, chatHub, "Alice")
 
 	got := make(chan cmdCtx, 1)
-	commands["echo"] = func(ctx cmdCtx) error {
-		got <- ctx
+	commands["echo"] = func(cc cmdCtx) error {
+		got <- cc
 		return nil
 	}
 	t.Cleanup(func() { delete(commands, "echo") })
@@ -267,16 +267,16 @@ func TestDispatchPassesArgumentsToTheHandler(t *testing.T) {
 		t.Fatalf("Dispatch returned an unexpected error: %v", err)
 	}
 
-	ctx := <-got
-	if ctx.session != alice {
-		t.Errorf("The handler ran for %v, wanted the calling session", ctx.session)
+	cc := <-got
+	if cc.session != alice {
+		t.Errorf("The handler ran for %v, wanted the calling session", cc.session)
 	}
-	if ctx.hub != chatHub {
+	if cc.hub != chatHub {
 		t.Error("The handler was given a different hub than the caller's")
 	}
 	want := []string{"Bob", "Hello There"}
-	if len(ctx.args) != len(want) || ctx.args[0] != want[0] || ctx.args[1] != want[1] {
-		t.Errorf("The handler got the args %q, wanted %q", ctx.args, want)
+	if len(cc.args) != len(want) || cc.args[0] != want[0] || cc.args[1] != want[1] {
+		t.Errorf("The handler got the args %q, wanted %q", cc.args, want)
 	}
 }
 
@@ -286,7 +286,7 @@ func TestDispatchReturnsAHandlerError(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	alice := joinRoom(t, chatHub, "Alice")
 
-	commands["boom"] = func(ctx cmdCtx) error { return fmt.Errorf("handler failed") }
+	commands["boom"] = func(cc cmdCtx) error { return fmt.Errorf("handler failed") }
 	t.Cleanup(func() { delete(commands, "boom") })
 
 	if err := runCommand(t, chatHub, alice, "boom"); err == nil {
