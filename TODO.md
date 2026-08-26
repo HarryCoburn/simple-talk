@@ -34,7 +34,7 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
       `client.Run` (`client/main.go:23`) call `os.Exit` on their caller's behalf. Both
       become `Run() error`, with `cmd/server` and `cmd/client` doing the `log.Fatal`. It is
       also what makes `serve` testable today while `Run` is not.
-- [ ] **`func (ctx cmdCtx)` occupies the name `context.Context` needs**
+- [X] **`func (ctx cmdCtx)` occupies the name `context.Context` needs**
       (`server/commands.go:57,66`). Rename the receiver before the context conversion below,
       not during it — commands is exactly where a real `ctx` will want to be threaded.
 - [ ] **Write down the `Out` ownership rule on the field itself** (`server/session.go:22`).
@@ -91,8 +91,6 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
   is already populated and then ignored by the client (`client/main.go:58`). This is a breaking wire
   change, so it pairs naturally with the version field.
 - **Sending more than text.**
-- **`context.Context`.** The `done`/`finished` pair is a correct hand-rolled equivalent; converting
-  is a natural exercise, and context composes with timeouts and every library added later.
 - **CI / golangci-lint / Makefile.** Held until BubbleTea is done and completed builds are being
   pushed to the VPS. One dissent on record, to accept or reject deliberately: `go test -race
   ./...` could come out of that bundle now — ten lines of workflow YAML, no linter, no release
