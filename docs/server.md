@@ -1,42 +1,171 @@
-# Server for SimpleChat
+# Server for SimpleTalk
 
-The server directory holds the server for the program.
+The server directory holds the server for the program. Activated by ./cmd/server/main.go, which
+does nothing but call Run() and report the error it returns. Nothing in this package exits the
+process on its caller's behalf.
+
+The shape is one hub goroutine owning all shared state, reached only by channels, with two
+goroutines per connected session. That buys freedom from mutexes over the session map and makes
+the check-and-claim of a username atomic. Shutdown is a context.Context: cancelling the one Run
+builds reaches the hub, the accept loop, and any handshake still in flight.
 
 ## main.go
 
-Run() starts the server by
+Run() is the entry point, and is split into three so it can be tested.
 
-- Opening a TCP listener for the server and setting up appropriate signals for shutdown.
-- Running serve() to create a hub and run it, then start an acceptLoop goroutine
-- acceptLoop() listens for connection signals on the connection, then passes them to handleNewConn().
+- Run() calls run() with the hardcoded address :2069 and the real signal.NotifyContext.
+- run(ctx, addr, notify) opens the TCP listener and returns an error if it cannot. Taking the
+  address as a parameter is what lets a test pick a port it knows is busy.
+- runOn(ctx, ln, notify) wires os.Interrupt and syscall.SIGTERM to a context, then calls serve().
+  Taking notify as a parameter is what lets a test assert which signals were asked for without
+  the test binary receiving one.
 
-handleNewConn() sets up the session on the server side.
+serve(ctx, ln) builds the hub from that context and starts three goroutines: the hub itself, a
+watcher that closes the listener when the hub is done, and acceptLoop(). It then waits for either
+the context to be cancelled or the accept loop to stop on its own, and tears down in order:
+hub.stop(), wait for the accept loop, then hub.wait().
 
-- Creates a new protocol.Conn and ties the incoming connection into it
-- Verifies the name sent using verifyName() to prevent name conflicts
-- Creates a Session with the verified name
-- Starts a select lock on hub.registerSession to add the session, and hub.doneChan for teardown.
-- Successful hub.registerSession sends a handshakeAck and a server announcement through announceConnection().
-- Starts two goroutines on the Session, which takes over from the server to handle future frames.
+acceptLoop(ctx, hub, ln, stopped) takes connections until the listener closes. A connection
+accepted after teardown has begun is closed rather than handed on — the hub is closing sessions,
+not registering them. Every other connection gets a buildNewSession() goroutine.
 
+buildNewSession(ctx, hub, conn) sets up the server side of one session.
+
+- Creates a protocol.Conn around the incoming connection.
+- Arms a context.AfterFunc that closes the socket if the context is cancelled. A handshake parks
+  in Recv, and closing the socket is the only thing that unblocks it: the read deadline is thirty
+  seconds out and Recv has no context of its own. The AfterFunc is disarmed at registration,
+  because from there the socket belongs to hub.closeSession.
+- Calls verifyName() and, on failure, tells the client why before hanging up. A version mismatch
+  and a name the rules reject both get an error frame; a bare EOF would leave the client with
+  nothing to act on. The client's own version is never echoed back, and nameRejection() matches
+  the reason against a fixed list of validate errors so a hostile name cannot reach a terminal.
+- Registers the session with the hub, which is where a duplicate name is caught.
+- Sends the handshake ack, announces the arrival through announceConnection(), and starts the
+  session's two goroutines.
+
+verifyName() reads the one handshake frame under protocol.HandshakeTimeout, clears the deadline,
+checks the protocol version before it looks at the name, then runs the name through
+internal/validate. The client validates too, for a faster prompt, but this is where the rule is
+enforced: a hand-written client is under no obligation to have checked.
+
+announceConnection() and announceDisconnection() build the system frames for arrivals and
+departures.
 
 ## hub.go
 
-This holds the connected sessions and routes frames between sessions and the server based on a Kind entry in the frame. hub.run() listens to these channels and also monitors for shutdowns.
+The hub holds the connected sessions and routes frames between them. hub.run() is a single
+goroutine selecting over four channels — register, unregister, broadcast and tasks — plus its own
+context. Because only that goroutine touches the session map, the fold-check-claim of a username
+happens in one loop iteration and two sessions racing for one name cannot both find it free.
 
-These channels are not accessed directly. Instead, there are several methods on the hub to access the channels. None are exported: nothing outside package server holds a *Hub.
+These channels are never touched directly. The methods around them are unexported: nothing
+outside package server holds a *Hub.
 
-- registerSession(*Session) registers a session.
-- unregisterSession(*Session) unregisters a session, closing it down properly.
-- broadcastFrame(protocol.Frame) sends a frame to all users.
-- stop() begins teardown, wait() blocks until it is done, and doneChan() reports the shutdown to the rest of the package.
+- registerSession(*Session) claims a name, returning ErrNameTaken if it is held.
+- unregisterSession(*Session) removes a session and announces the departure.
+- broadcastFrame(protocol.Frame) sends a frame to everyone. deliver() is the internal equivalent,
+  for code already running inside the hub goroutine.
+- sendTo(*Session, protocol.Frame) replies to one session, and sessionNames() reads the roster.
+  Both are used by commands.
+- stop() begins teardown, wait() blocks until it is complete, and doneChan() reports shutdown to
+  the rest of the package.
 
-There are also hub methods used by commands: sendTo() replies to one session, and sessionNames() reads the roster.
+Every one of these blocks until the hub goroutine services it, so none may be called from inside
+it. A closure passed to tasks that called back into the hub would wait on the loop that is
+running it.
+
+### Shutdown
+
+The hub derives its own context from the one serve() was given, so cancelling that context and
+calling stop() are the same thing. stop() is the cancel func, which is idempotent — calling it
+twice is safe and needs no guard.
+
+Two signals, not one, and the difference matters:
+
+- ctx.Done() means teardown has been *requested*. Every method above selects on it, so a caller
+  is released rather than parked forever against a hub that will never answer.
+- finished means run() has *drained and returned*, with every session closed. wait() blocks on
+  it. Context has no equivalent, which is why the channel survives the conversion — serve()
+  depends on the distinction to guarantee sessions are closed before it returns.
+
+Callers see ErrHubClosed, which wraps the context's own error. errors.Is finds both it and
+context.Canceled: ErrHubClosed is this package's vocabulary, context.Canceled is the cause.
+
+### Running work inside the hub
+
+submit() is the generic core: it sends a closure on tasks and waits for the result, reporting
+false if the hub shut down first. query() reads hub state and exec() mutates it; both are submit
+underneath, with exec discarding the result.
+
+closeSession() is hub-goroutine-only and is the single owner of teardown for one session: it
+closes the session's Out channel, closes the socket, and deletes the map entry. registered()
+guards it by identity rather than by name, because both of a session's goroutines can call leave,
+and a reconnect under the same name in between would otherwise let a stale leave tear down the
+new session.
+
+deliverTo() is deliberately non-blocking. If a session's 256-frame buffer is full the session is
+dropped rather than the hub goroutine blocking on it — one slow reader must not stall routing for
+everyone.
 
 ## session.go
 
-This holds the Session struct and its associated features. When a client sends a connection, the server places it into a Session struct.
+The Session struct is one connected user: their protocol.Conn, the name they chose, the queue of
+frames waiting to go out to them, and the folded key the hub registered them under.
 
-readInput and writeLoop are the input to and output from the session respectively.
+Each session runs two goroutines, started by buildNewSession():
 
-Sessions are also responsible for using internal/verify to check for disallowed message types, and they also handle decorating the chat strings.
+- readInput() reads frames off the socket and acts on them — chat and pose frames are checked and
+  decorated, command frames go to dispatchCommand(), unsupported kinds are ignored rather than
+  fatal. An oversized or malformed frame is recoverable: protocol.Conn resynchronises on the
+  newline, so the session survives.
+- writeLoop() ranges over the session's Out channel and writes each frame to the socket.
+
+Both defer guard(), which turns a panic on one session's goroutine into that one session leaving
+rather than the whole server unwinding. recover only sees panics from its own goroutine, so each
+of the two needs its own.
+
+leave() hands the session back to the hub. Either goroutine may call it, and calling it twice is
+safe.
+
+checkChat() runs the message through internal/validate; decorateChat() renders it, using the
+message format for ordinary chat and the pose format for a line starting with ":". Decoration
+happens here, on the session's own goroutine, not in the hub.
+
+### The Out channel
+
+Out is written to only by the hub goroutine, through deliverTo(), and closed only by
+closeSession(). That is what makes closing it safe while sends are in flight: both happen on the
+same goroutine, and sendTo() reaches deliverTo() through exec() rather than directly. A send
+added from anywhere else is a send-on-closed-channel panic in production, not a test failure.
+
+## commands.go
+
+Commands arrive as their own frame kind — the client strips the leading "/" before building it —
+and are dispatched by dispatchCommand() from the session's read goroutine. An unknown or empty
+command name is reported to the caller and is not an error.
+
+Handlers receive a cmdEnv: the calling session, a hub, the arguments, and the sorted roster of
+command names. They get commandHub rather than the *Hub itself — an interface of exactly three
+methods, sendTo, sessionNames and broadcastFrame — so a handler cannot reach submit, exec or the
+session map.
+
+The receivers and parameters of cmdEnv are named cc, not ctx. Commands is where a real
+context.Context will want to be threaded, and two things reading alike in one function is worth
+avoiding.
+
+Every cmdEnv method is a round trip through the hub goroutine, so handlers must run on the
+caller's own goroutine and never inside hub.run(). Being called from readInput() is what makes
+that true today.
+
+The command table is a map of name to handler. Currently:
+
+- who lists everyone connected, via sessionNames().
+- help lists the command names, from the memoised roster.
+
+## Related
+
+- internal/protocol is the wire format shared with the client: frames, kinds, and the Conn that
+  reads and writes them.
+- internal/validate holds the rules for user-supplied names and messages. The server enforces
+  them; it never trusts that the client ran them first.
