@@ -228,3 +228,54 @@ func TestHandleNewConnReportsAVersionMismatch(t *testing.T) {
 		t.Error("The connection stayed open after a version mismatch, wanted it closed")
 	}
 }
+
+// A name the rules reject is told why, the same as a taken name, rather than
+// being dropped on a bare EOF the client can only report as a receive error.
+func TestHandleNewConnReportsAnInvalidName(t *testing.T) {
+	cases := []struct {
+		desc string
+		name string
+		want error
+	}{
+		{"blank", "", validate.ErrNameEmpty},
+		{"only spaces", "   ", validate.ErrNameEmpty},
+		{"a newline, which would forge chat lines", "Alice\n<Bob> hi", validate.ErrNameNotAllowed},
+		{"far too long", strings.Repeat("a", validate.MaxNameRunes+1), validate.ErrNameTooLong},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			chatHub, _ := newTestHub(t)
+			in, out := net.Pipe()
+			t.Cleanup(func() { in.Close(); out.Close() })
+			peer := protocol.NewConn(out)
+
+			go handleNewConn(chatHub, in)
+			go func() { peer.SendHandshake(tc.name, serverVersion) }()
+
+			f, err := peer.Recv()
+			if err != nil {
+				t.Fatalf("Wanted an error frame back before the hang up, got: %v", err)
+			}
+			if f.Kind != protocol.KindError {
+				t.Fatalf("Wanted a %q frame back, got %q", protocol.KindError, f.Kind)
+			}
+			var got protocol.Error
+			if err := json.Unmarshal(f.Payload, &got); err != nil {
+				t.Fatalf("Could not unpack the error payload: %v", err)
+			}
+			if got.Message != tc.want.Error() {
+				t.Errorf("The reason was %q, wanted %q", got.Message, tc.want)
+			}
+
+			// The rejected name is never echoed back: it reaches a terminal.
+			if tc.name != "" && strings.Contains(got.Message, tc.name) {
+				t.Errorf("The reason %q quoted the rejected name", got.Message)
+			}
+
+			// The rejected client is hung up on rather than left half connected.
+			if _, err := peer.Recv(); err == nil {
+				t.Error("The connection stayed open after an invalid name, wanted it closed")
+			}
+		})
+	}
+}

@@ -94,6 +94,13 @@ func handleNewConn(hub *Hub, conn net.Conn) {
 				}
 			}
 		}
+		// A name the rules reject is the client's to fix too, so it gets the
+		// reason rather than a bare EOF. recvHandshake already handles KindError.
+		if reason, ok := nameRejection(err); ok {
+			if sendErr := fullc.SendError(reason); sendErr != nil {
+				log.Printf("could not report an invalid name: %v", sendErr)
+			}
+		}
 		fullc.Close()
 		return
 	}
@@ -171,6 +178,26 @@ func verifyName(fullc *protocol.Conn, version string) (string, error) {
 		return "", err
 	}
 	return name, nil
+}
+
+// nameRejection reports whether err is a name that failed validate.Name, and
+// returns the reason to send back.
+//
+// The reasons are matched against a fixed list rather than passing err.Error()
+// through: every message here is a constant that never embeds the name, so a
+// hostile name cannot get itself echoed to a terminal. verifyName's other
+// errors do quote their input, which is exactly why they are not sent.
+func nameRejection(err error) (string, bool) {
+	for _, reason := range []error{
+		validate.ErrNameEmpty,
+		validate.ErrNameTooLong,
+		validate.ErrNameNotAllowed,
+	} {
+		if errors.Is(err, reason) {
+			return reason.Error(), true
+		}
+	}
+	return "", false
 }
 
 func announceConnection(name string) (protocol.Frame, error) {
