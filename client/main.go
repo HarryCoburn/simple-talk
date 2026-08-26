@@ -16,10 +16,10 @@ const userNamePrompt string = "Please state your username: "
 
 // main connects to the chat server, sends a handshake through setUserName, then runs a receive loop
 // and send loop.
-func Run() {
+func Run() error {
 	bareConn, err := net.Dial("tcp", "localhost:2069") // TODO, change to ask for a connection string.
 	if err != nil {
-		log.Fatal("client could not dial to the server.")
+		return fmt.Errorf("client could not dial to the server: %v", err)
 	}
 	conn := protocol.NewConn(bareConn)
 	defer conn.Close() // This will also close bareConn
@@ -29,13 +29,14 @@ func Run() {
 	// Handshake
 	name, err := sendHandshake(conn, stdin, protocol.ProtocolVersion)
 	if err != nil {
-		log.Printf("problem with setting username: %v", err)
-		return
+		return fmt.Errorf("problem with setting username: %v", err)
+
 	}
 
 	dead := make(chan struct{})
 	go receiveLoop(conn, dead)
 	sendLoop(conn, name, stdin, dead)
+	return nil
 }
 
 // receiveLoop listens to a protocol.Conn for frames. If they are a KindChat or a KindSystem,

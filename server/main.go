@@ -16,11 +16,11 @@ import (
 )
 
 // Run starts the server and blocks until an interrupt or SIGTERM
-func Run() {
+func Run() error {
 	// Create the raw TCP connection. TODO upgrade to TLS.
 	ln, err := net.Listen("tcp", ":2069")
 	if err != nil {
-		log.Fatal("Could not open server")
+		return fmt.Errorf("Could not open server listener: %v", err)
 	}
 
 	signals := make(chan os.Signal, 1)
@@ -28,6 +28,7 @@ func Run() {
 	defer signal.Stop(signals)
 
 	serve(ln, signals)
+	return nil
 }
 
 func serve(ln net.Listener, shutdown <-chan os.Signal) {
