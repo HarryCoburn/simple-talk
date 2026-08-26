@@ -126,11 +126,6 @@ func buildNewSession(ctx context.Context, hub *Hub, conn net.Conn) {
 			if sendErr := pConn.SendError(fmt.Sprintf("this server speaks version %s. Update your client.", hub.version)); sendErr != nil {
 				log.Printf("could not report the version mismatch: %v", sendErr)
 			}
-			if errors.Is(err, ErrNameTaken) {
-				if sendErr := pConn.SendError("this name is already taken. Please choose another."); sendErr != nil {
-					log.Printf("could not report a name was already taken: %v", sendErr)
-				}
-			}
 		}
 		// A name the rules reject is the client's to fix too, so it gets the
 		// reason rather than a bare EOF. recvHandshake already handles KindError.
