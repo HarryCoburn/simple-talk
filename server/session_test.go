@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -21,7 +22,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 	t.Cleanup(func() { out.Close() })
 	fullc := protocol.NewConn(in)
 	chatClient := newSession(fullc, "Harry")
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go chatClient.writeLoop(chatHub)
 	peer := protocol.NewConn(out)
 
@@ -45,7 +46,7 @@ func TestWriteLoopWriteAndClose(t *testing.T) {
 
 func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go testHelp.Session.writeLoop(chatHub)
 
 	// Break the socket so the next write fails.
@@ -65,7 +66,7 @@ func TestWriteLoopUnregistersOnWriteError(t *testing.T) {
 
 func TestReadLoop(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go testHelp.Session.readInput(chatHub)
 	if err := testHelp.Peer.SendChat("test", "Hello"); err != nil {
 		t.Fatalf("Could not send the chat: %v", err)
@@ -84,7 +85,7 @@ func TestReadLoop(t *testing.T) {
 
 func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go testHelp.Session.readInput(chatHub)
 
 	// A frame past MaxFrameSize is recoverable: protocol.Conn resynchronizes on
@@ -122,7 +123,7 @@ func TestReadLoopSurvivesOversizedFrame(t *testing.T) {
 
 func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go testHelp.Session.readInput(chatHub)
 
 	// A kind this server does not handle must not tear down the connection.
@@ -147,7 +148,7 @@ func TestReadLoopIgnoresUnsupportedFrameKinds(t *testing.T) {
 
 func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go testHelp.Session.readInput(chatHub)
 	testHelp.OutConn.Close()
 	var got *Session
@@ -163,7 +164,7 @@ func TestReadLoopUnregistersOnCleanDisconnect(t *testing.T) {
 
 func TestReadLoopUnregisteresOnBrokenConnection(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	go testHelp.Session.readInput(chatHub)
 	testHelp.InConn.Close()
 	var got *Session

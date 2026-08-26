@@ -20,7 +20,7 @@ func TestHandleNewConnClosesWhenHubIsDone(t *testing.T) {
 	serverSide, clientSide := net.Pipe()
 	t.Cleanup(func() { serverSide.Close(); clientSide.Close() })
 
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	chatHub.stop()
 
 	go buildNewSession(context.Background(), chatHub, serverSide)

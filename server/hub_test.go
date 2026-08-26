@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"sync"
@@ -141,7 +142,7 @@ func TestDroppedClientPath(t *testing.T) {
 
 func TestDoneGuardsBroadcastSend(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
 	// Nothing is draining chatHub.Broadcast, so readInput parks in the
@@ -160,7 +161,7 @@ func TestDoneGuardsBroadcastSend(t *testing.T) {
 
 func TestDoneGuardsUnregister(t *testing.T) {
 	testHelp := setUpTest(t)
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 	exited := make(chan struct{})
 	go func() { testHelp.Session.readInput(chatHub); close(exited) }()
 	chatHub.stop()
@@ -284,5 +285,64 @@ func TestTheRosterShowsNamesAsTyped(t *testing.T) {
 	}
 	if !slices.Equal(names, []string{"Alice", "BOB"}) {
 		t.Errorf("The roster is %v, wanted the names as typed", names)
+	}
+}
+
+// Shutdown is a cancelled context now, but ErrHubClosed stays the sentinel
+// callers match on. Both must hold: the domain error is the package's
+// vocabulary, and the cause is what says why. Pinned because the obvious
+// "simplification" is to return one and drop the other.
+func TestShutdownErrorsCarryTheirCause(t *testing.T) {
+	chatHub, stop := newTestHub(t)
+	session := newSession(nil, "Harry")
+	stop()
+
+	cases := []struct {
+		desc string
+		call func() error
+	}{
+		{"registerSession", func() error { return chatHub.registerSession(session) }},
+		{"broadcastFrame", func() error { return chatHub.broadcastFrame(mustChatFrame(t, "Harry", "hi")) }},
+		{"sessionNames", func() error { _, err := chatHub.sessionNames(); return err }},
+		{"sendTo", func() error { return chatHub.sendTo(session, mustChatFrame(t, "Harry", "hi")) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := tc.call()
+			if !errors.Is(err, ErrHubClosed) {
+				t.Errorf("%s returned %v, wanted it to match ErrHubClosed", tc.desc, err)
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("%s returned %v, wanted it to carry context.Canceled", tc.desc, err)
+			}
+		})
+	}
+}
+
+// The hub's ctx descends from the one serve was given, so cancelling that far
+// upstream is a shutdown. This is the path a signal takes now, and nothing
+// else in the package covers it.
+func TestCancellingTheParentContextTearsTheHubDown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	chatHub := newHub(ctx, protocol.ProtocolVersion)
+	go chatHub.run()
+	t.Cleanup(chatHub.stop)
+
+	// Registered first, so teardown has something to close.
+	session := newSession(nil, "Harry")
+	mustRegister(t, chatHub, session)
+
+	cancel()
+
+	finished := make(chan struct{})
+	go func() { defer close(finished); chatHub.wait() }()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("The hub did not finish teardown after its parent context was cancelled")
+	}
+
+	if err := chatHub.registerSession(newSession(nil, "Bob")); !errors.Is(err, ErrHubClosed) {
+		t.Errorf("registerSession returned %v after the parent was cancelled, wanted ErrHubClosed", err)
 	}
 }

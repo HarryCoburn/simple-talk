@@ -33,7 +33,7 @@ func Run() error {
 
 func serve(ctx context.Context, ln net.Listener) {
 
-	hub := newHub(protocol.ProtocolVersion)
+	hub := newHub(ctx, protocol.ProtocolVersion)
 
 	stopped := make(chan struct{})
 	go hub.run()

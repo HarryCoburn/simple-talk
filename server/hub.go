@@ -1,10 +1,11 @@
 package server
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"slices"
-	"sync"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 	"github.com/HarryCoburn/simple-talk/internal/validate"
@@ -33,24 +34,35 @@ type Hub struct {
 	unregister chan *Session       // Unregister a session
 	broadcast  chan protocol.Frame // Send a frame to all sessions
 	tasks      chan func(*Hub)     // Run a closure inside Hub.run without disrupting serialization
-	done       chan struct{}       // Signal we're done with the hub. Begin teardown.
-	finished   chan struct{}       // Signal the hub is completely closed.
-	stopOnce   sync.Once           // Guards against a second close
 	sessions   map[string]*Session // All sessions, keyed by the folded form of their name.
 	version    string              // The protocol version this server speaks
+
+	// ctx is the hub's lifetime, not a per-call context. Storing one in a
+	// struct is usually wrong; it is right here because the hub is a long-lived
+	// actor whose callers arrive on their own goroutines with no request of
+	// their own to scope. Cancelling it asks for teardown.
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	// finished answers a different question than ctx.Done(): teardown is
+	// complete, not merely requested. serve depends on the difference, and
+	// context has no equivalent.
+	finished chan struct{}
 }
 
-// Create a new hub
-func newHub(v string) *Hub {
+// Create a new hub. Cancelling ctx tears the hub down, as stop does.
+func newHub(ctx context.Context, v string) *Hub {
+	ctx, cancel := context.WithCancel(ctx)
 	hub := Hub{
 		register:   make(chan registerReq),
 		unregister: make(chan *Session),
 		broadcast:  make(chan protocol.Frame),
 		tasks:      make(chan func(*Hub)),
-		done:       make(chan struct{}),
-		finished:   make(chan struct{}),
 		sessions:   make(map[string]*Session),
 		version:    v,
+		ctx:        ctx,
+		cancel:     cancel,
+		finished:   make(chan struct{}),
 	}
 	return &hub
 }
@@ -99,7 +111,7 @@ func (h *Hub) run() {
 			// command handlers are kept out of here and run on the caller's
 			// goroutine instead.
 			task(h)
-		case <-h.done:
+		case <-h.ctx.Done():
 			// Start teardown by closing all sessions. h.Finished will signal the rest.
 			for _, c := range h.sessions {
 				h.closeSession(c)
@@ -110,8 +122,16 @@ func (h *Hub) run() {
 }
 
 // stop signals the hub to begin a teardown. stop does not wait. Pair with wait if you need that.
+// It is safe to call more than once: context.CancelFunc is idempotent.
 func (h *Hub) stop() {
-	h.stopOnce.Do(func() { close(h.done) })
+	h.cancel()
+}
+
+// closedErr reports a shutdown to a caller. ErrHubClosed stays the sentinel
+// callers match on -- it is this package's vocabulary, where context.Canceled
+// is plumbing -- but the cause travels with it, so errors.Is finds both.
+func (h *Hub) closedErr() error {
+	return fmt.Errorf("%w: %w", ErrHubClosed, h.ctx.Err())
 }
 
 // wait blocks until run() has torn the hub down. Only returns if run() was started and stop was called
@@ -121,7 +141,7 @@ func (h *Hub) wait() {
 
 // doneChan reports hub shutdown to callers outside the hub goroutine.
 func (h *Hub) doneChan() <-chan struct{} {
-	return h.done
+	return h.ctx.Done()
 }
 
 // Channel Calls
@@ -133,21 +153,21 @@ func (h *Hub) registerSession(c *Session) error {
 	ch := make(chan error, 1)
 	select {
 	case h.register <- registerReq{session: c, reply: ch}:
-	case <-h.done:
-		return ErrHubClosed
+	case <-h.ctx.Done():
+		return h.closedErr()
 	}
 	select {
 	case err := <-ch:
 		return err
-	case <-h.done:
-		return ErrHubClosed
+	case <-h.ctx.Done():
+		return h.closedErr()
 	}
 }
 
 func (h *Hub) unregisterSession(c *Session) {
 	select {
 	case h.unregister <- c:
-	case <-h.done:
+	case <-h.ctx.Done():
 	}
 }
 
@@ -155,8 +175,8 @@ func (h *Hub) unregisterSession(c *Session) {
 func (h *Hub) broadcastFrame(f protocol.Frame) error {
 	select {
 	case h.broadcast <- f:
-	case <-h.done:
-		return ErrHubClosed
+	case <-h.ctx.Done():
+		return h.closedErr()
 	}
 	return nil
 }
@@ -172,13 +192,13 @@ func submit[T any](h *Hub, fn func(*Hub) T) (T, bool) {
 	var zero T
 	select {
 	case h.tasks <- task:
-	case <-h.done:
+	case <-h.ctx.Done():
 		return zero, false
 	}
 	select {
 	case v := <-ch:
 		return v, true
-	case <-h.done:
+	case <-h.ctx.Done():
 		return zero, false
 	}
 }
@@ -209,7 +229,7 @@ func (h *Hub) sessionNames() ([]string, error) {
 		return names
 	})
 	if !ok {
-		return nil, ErrHubClosed
+		return nil, h.closedErr()
 	}
 	return names, nil
 }
@@ -241,7 +261,7 @@ func (h *Hub) sendTo(c *Session, f protocol.Frame) error {
 	if !exec(h, func(h *Hub) {
 		h.deliverTo(c, f)
 	}) {
-		return ErrHubClosed
+		return h.closedErr()
 	}
 	return nil
 }

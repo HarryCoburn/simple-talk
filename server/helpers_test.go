@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -67,7 +68,7 @@ func mustRegister(t *testing.T, hub *Hub, c *Session) {
 }
 
 func newTestHub(t *testing.T) (*Hub, func()) {
-	chatHub := newHub(protocol.ProtocolVersion)
+	chatHub := newHub(context.Background(), protocol.ProtocolVersion)
 
 	// Start the chathub goroutine
 	go chatHub.run()
