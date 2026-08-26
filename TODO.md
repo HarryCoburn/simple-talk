@@ -24,13 +24,13 @@ about sockets. That is the thing that makes a transport swap invasive. See the a
 
 ## P1 — cheap now, expensive later
 
-- [ ] **The protocol version is declared twice.** `serverVersion` (`server/main.go:18`) and
+- [X] **The protocol version is declared twice.** `serverVersion` (`server/main.go:18`) and
       `clientVersion` (`client/main.go:16`) are both `"0.0.1"` and are compared for exact
       equality across the wire (`server/main.go:154`), with nothing to make them drift
       together. It is a property of the protocol, not of either end: one `protocol.Version`
       in `internal/protocol`, read by both. Do this before the version field carries any
       real weight — auth and structured payloads are both keyed to it.
-- [ ] **`log.Fatal` inside library packages.** `server.Run` (`server/main.go:25`) and
+- [X] **`log.Fatal` inside library packages.** `server.Run` (`server/main.go:25`) and
       `client.Run` (`client/main.go:23`) call `os.Exit` on their caller's behalf. Both
       become `Run() error`, with `cmd/server` and `cmd/client` doing the `log.Fatal`. It is
       also what makes `serve` testable today while `Run` is not.

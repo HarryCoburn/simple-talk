@@ -256,8 +256,8 @@ func TestDispatchPassesArgumentsToTheHandler(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	alice := joinRoom(t, chatHub, "Alice")
 
-	got := make(chan cmdCtx, 1)
-	commands["echo"] = func(cc cmdCtx) error {
+	got := make(chan cmdEnv, 1)
+	commands["echo"] = func(cc cmdEnv) error {
 		got <- cc
 		return nil
 	}
@@ -286,7 +286,7 @@ func TestDispatchReturnsAHandlerError(t *testing.T) {
 	chatHub, _ := newTestHub(t)
 	alice := joinRoom(t, chatHub, "Alice")
 
-	commands["boom"] = func(cc cmdCtx) error { return fmt.Errorf("handler failed") }
+	commands["boom"] = func(cc cmdEnv) error { return fmt.Errorf("handler failed") }
 	t.Cleanup(func() { delete(commands, "boom") })
 
 	if err := runCommand(t, chatHub, alice, "boom"); err == nil {

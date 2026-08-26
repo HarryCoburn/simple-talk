@@ -25,12 +25,12 @@ type commandHub interface {
 
 var _ commandHub = (*Hub)(nil)
 
-// cmdCtx is everything a command handler is allowed to touch.
+// cmdEnv is everything a command handler is allowed to touch.
 //
 // Receivers and parameters of this type are named cc, not ctx: commands is
 // where a real context.Context will want to be threaded, and the two reading
 // alike in the same function is the confusion worth avoiding up front.
-type cmdCtx struct {
+type cmdEnv struct {
 	session *Session   // Who ran the command.
 	hub     commandHub // For queries and for replying.
 	args    []string   // Everything after the command word.
@@ -39,7 +39,7 @@ type cmdCtx struct {
 
 // A cmdHandler runs one command. Replies to the caller go through cc.reply;
 // anything the whole room should see goes to hub.broadcastFrame.
-type cmdHandler func(cc cmdCtx) error
+type cmdHandler func(cc cmdEnv) error
 
 // The command table. Names are lowercase and carry no leading slash — the
 // client strips that before building the frame.
@@ -60,7 +60,7 @@ var commandNames = sync.OnceValue(func() []string {
 })
 
 // reply sends a system message to the caller alone.
-func (cc cmdCtx) reply(format string, a ...any) error {
+func (cc cmdEnv) reply(format string, a ...any) error {
 	f, err := protocol.NewSystemFrame(fmt.Sprintf(format, a...))
 	if err != nil {
 		return err
@@ -69,7 +69,7 @@ func (cc cmdCtx) reply(format string, a ...any) error {
 }
 
 // replyError sends an error frame to the caller alone.
-func (cc cmdCtx) replyError(format string, a ...any) error {
+func (cc cmdEnv) replyError(format string, a ...any) error {
 	f, err := protocol.NewErrorFrame(fmt.Sprintf(format, a...))
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func dispatchCommand(c *Session, hub commandHub, f protocol.Frame) error {
 	}
 
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
-	cc := cmdCtx{session: c, hub: hub, args: cmd.Args, roster: commandNames()}
+	cc := cmdEnv{session: c, hub: hub, args: cmd.Args, roster: commandNames()}
 
 	if name == "" {
 		return cc.replyError("no command given")
@@ -104,7 +104,7 @@ func dispatchCommand(c *Session, hub commandHub, f protocol.Frame) error {
 }
 
 // cmdWho lists everyone currently connected.
-func cmdWho(cc cmdCtx) error {
+func cmdWho(cc cmdEnv) error {
 	names, err := cc.hub.sessionNames()
 	if err != nil {
 		return err
@@ -118,7 +118,7 @@ func cmdWho(cc cmdCtx) error {
 }
 
 // cmdHelp lists the available commands.
-func cmdHelp(cc cmdCtx) error {
+func cmdHelp(cc cmdEnv) error {
 
 	return cc.reply("Commands: %s", strings.Join(cc.roster, ", "))
 }
