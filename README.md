@@ -45,6 +45,7 @@ Get the IP and port from whoever is running the server. Run ```./client -addr <i
 - A text line starting with ```:``` will do a pose command.
 - ```/help``` will bring up a help menu
 - ```/who``` will tell you the names of all connected clients and the number of connected clients
+- ```/quit``` quits the client
 
 ## Why I Built This
 
@@ -68,6 +69,6 @@ It's also *very* cool to me to have built even this little bit of a chat client 
 
 ## How I Would/Will Improve the Program
 
-- Both the server and the client really do need a proper /quit command
+- Better way to shut the server down?
 - It would also be good to add /nick to change the display nickname
 - Other things listed in TODO.md
