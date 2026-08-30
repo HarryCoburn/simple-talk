@@ -46,6 +46,7 @@ type cmdHandler func(cc cmdEnv) error
 var commands = map[string]cmdHandler{
 	"who":  cmdWho,
 	"help": cmdHelp,
+	"quit": cmdQuit,
 }
 
 // commandNames is used by /help to send a list of all of the names of the commands.
@@ -126,4 +127,8 @@ func cmdWho(cc cmdEnv) error {
 func cmdHelp(cc cmdEnv) error {
 
 	return cc.reply("Commands: %s", strings.Join(cc.roster, ", "))
+}
+
+func cmdQuit(cc cmdEnv) error {
+	return cc.session.Conn.Close()
 }
