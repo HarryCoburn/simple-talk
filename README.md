@@ -1,10 +1,19 @@
 # SimpleTalk
 
-SimpleTalk is a terminal-based chat server and client written in Go. It is "simple" because it follows an older, less secure style of network communication akin to tallker MUDs. Just open port on your firewall, start the server and point it to the port, then anyone with your IP and port can communicate with each other by text over the channel.
+SimpleTalk is a terminal-based chat server and client written in Go for people who just want to talk without too much fuss. 
 
-There is no encryption in this program, so do not use this for anything you want private. 
+Remember when phones were all we had and we communicated just fine? It was simple. I wanted a way to chat with a similar level of simplicity. SimpleTalk lets you chat with other people online in a way that:
 
-## To Build
+- Doesn't have the presumptions of IRC and didn't immediately scare off people like IRC can
+- Doesn't have the federation presumptions and XML-dependence of XMPP
+- Lets users talk and pose similar to a talker-type MUD but without the presumptions of MUDs
+- Doesn't have a presumption of an unknown party listening in like the entire rest of the interent does these days (I'm thinking businesses. If you've got government attention on you, you've got a whole different set of problems.)
+
+At the current stage, the closest thing this client/server/protocol is similar to is [Internet Citizen's Band](https://en.wikipedia.org/wiki/Internet_Citizen's_Band). This project was created as the second capstone of the Boot.dev backend developer course.
+
+## Quick Start
+
+You will need Go 1.25 or later to build the project. Binary releases to come soon.
 
 First clone the project, cd to the project directory root, and then type the following:
 
@@ -16,26 +25,19 @@ Client:
 
 ```go build ./client```
 
-## Usage
+### Local testing
 
-Using the -h flag when running either the server or the client will bring up help, but here are the simple basics
+Run ```./server``` and one or more ```./client``` in different terminals on your machine. By default, the server will spawn at localhost:2069.
 
-### Server
+### Creating a server
 
-- Choose a port you want to open on your server and open it through your firewall.
-- Run ```./server -port <port>```. The default port is 2069.
-- Kill the server with Ctrl-C.
-- Add it to a service if you want it to persist on a VPS or wherever you put it.
+Upload ```./server``` to your location of choice and open a TCP port in your firewall you want to use for SimpleTalk. Run ```./server -port <port>``` to set the port, or use the default port of 2069.
 
-### Client
+If you want to make it persistent, create a service on your VPS or wherever you're hosting to start the server and keep it running.
 
-- Get the IP and port from whoever is running the server.
-- Run ```./client -addr <ip>:<port>``` to start it, or just ```./client``` to start on localhost:2069 for local testing.
-- Kill the client with Ctrl-C.
+### Connecting to a remote client
 
-### Testing
-
-If you just want to check it out, run ./server on your local machine and then two ./client instances in another window.
+Get the IP and port from whoever is running the server. Run ```./client -addr <ip>:<port>``` to start it. Use ```/help``` for commands.
 
 ### Current commands
 
