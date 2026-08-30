@@ -3,7 +3,9 @@ package client
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -42,8 +44,8 @@ func Run(addr string) error {
 	}
 
 	dead := make(chan struct{})
-	go receiveLoop(conn, dead)
-	sendLoop(conn, name, stdin, dead)
+	go sendLoop(conn, name, stdin, dead)
+	receiveLoop(conn, dead)
 	return nil
 }
 
@@ -54,8 +56,12 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 	for {
 		f, err := conn.Recv()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				fmt.Printf("Quitting client...\n")
+				return
+			}
 			fmt.Printf("\nDisconnected: %v\n", err)
-			return
+			os.Exit(1)
 		}
 		switch f.Kind {
 		case protocol.KindChat:
@@ -108,7 +114,6 @@ func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan s
 		}
 	}
 	conn.Close()
-	<-dead
 }
 
 func parseInput(line string) (name string, args []string, ok bool) {
