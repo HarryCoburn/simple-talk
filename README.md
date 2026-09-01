@@ -2,6 +2,8 @@
 
 SimpleTalk is a terminal-based chat server and client written in Go for people who just want to talk without too much fuss. 
 
+## Motivation
+
 Remember when phones were all we had and we communicated just fine? It was simple. I wanted a way to chat with a similar level of simplicity. SimpleTalk lets you chat with other people online in a way that:
 
 - Doesn't have the presumptions of IRC and didn't immediately scare off people like IRC can
@@ -25,9 +27,26 @@ Client:
 
 ```go build ./client```
 
-### Local testing
-
 Run ```./server``` and one or more ```./client``` in different terminals on your machine. By default, the server will spawn at localhost:2069.
+
+
+## Usage
+
+Available flags:
+
+- `-h` - Show help
+- `-port <port>` - For the server. Sets the port to what you want.
+- `-addr <ip>:<port>` - For the client. Connect to an ip and port. Mind the colon between the two.
+
+## Client commands after loading
+
+- A bare text line will broadcast to all connected clients
+- A text line starting with ```:``` will do a pose command.
+- ```/help``` will bring up a help menu
+- ```/who``` will tell you the names of all connected clients and the number of connected clients
+- ```/quit``` quits the client
+
+## Examples
 
 ### Creating a server
 
@@ -39,29 +58,17 @@ If you want to make it persistent, create a service on your VPS or wherever you'
 
 Get the IP and port from whoever is running the server. Run ```./client -addr <ip>:<port>``` to start it. Use ```/help``` for commands.
 
-### Current commands
+The client will ask for a username. You cannot conflict with another user name already connected to the same server.
 
-- A bare text line will broadcast to all connected clients
-- A text line starting with ```:``` will do a pose command.
-- ```/help``` will bring up a help menu
-- ```/who``` will tell you the names of all connected clients and the number of connected clients
-- ```/quit``` quits the client
+## Contributing
 
-## Why I Built This
-
-This is the second capstone project for the Boot.dev Backend Developer pathway and my first greenfield project in Go. I chose the topic and built it using the knowledge I learned there, then used LLM assistance to fill in testing gaps and discover edge cases I would not know about with my current level of Go and backend programmer experience.
-
-I grew up in an older era of the internet where protocols, not platforms, were the name of the game. I wanted to see if I could create one and get a client and server to talk using it. The truly old-school way would have been something like the Telnet specification or copying the protocol that a MUD platform would use. However, that would cut out a lot of the things I learned in Boot.Dev, which focused a lot on marshalling and unmarshalling JSON, so I went with that route.
-
-It is intended to be a portfolio project for a possible future job, so I did not want to make to too complicated for an interviewer to study or too difficult to test (e.g. adding encryption and forcing the use of a TLS certificate.)
-
-## How it Functions
-
-I'm using newline-delimited JSON to send frames of data over a TCP connection. Depending on the ```Kind``` of the frame, a central ```Hub``` routes the frame to appropriate methods to format the string, run the command, close the program, etc.
+Clone the repo, then follow the Quick Start instructions. If you'd like to contribute, fork the repository and open a pull request to the 'main' branch.
 
 ## What I've Learned
 
-First, this gave me a good workout in learning how to use channels safely without locking them. Second, I learned quite a bit about what needs to happen to close down multiple layers of a networked program safely. The test suites are quite large and will give me a good template to use in future projects for robust testing.
+I'm using newline-delimited JSON to send frames of data over a TCP connection. Depending on the ```Kind``` of the frame, a central ```Hub``` routes the frame to appropriate methods to format the string, run the command, close the program, etc.
+
+First, this project gave me a good workout in learning how to use channels safely without locking them. Second, I learned quite a bit about what needs to happen to close down multiple layers of a networked program safely. The test suites are quite large and will give me a good template to use in future projects for robust testing.
 
 I also learned more details about several new-to-me libraries in Go, like signals, precis, and sync.
 
@@ -69,6 +76,6 @@ It's also *very* cool to me to have built even this little bit of a chat client 
 
 ## How I Would/Will Improve the Program
 
-- Better way to shut the server down?
-- It would also be good to add /nick to change the display nickname
+- It would be good to add /nick to change the display nickname- 
 - Other things listed in TODO.md
+- Look over the ICB protocol and nab any good features from that while still keeping things simple
