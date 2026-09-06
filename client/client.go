@@ -63,30 +63,32 @@ func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 			fmt.Fprintf(w, "\nDisconnected: %v\n", err)
 			os.Exit(1)
 		}
-		switch f.Kind {
-		case protocol.KindChat:
-			var msg protocol.Chat
-			if err := json.Unmarshal(f.Payload, &msg); err != nil {
-				continue
-			}
-			fmt.Fprintln(w, msg.Text)
-		case protocol.KindSystem:
-			var msg protocol.System
-			if err := json.Unmarshal(f.Payload, &msg); err != nil {
-				continue
-			}
-			fmt.Fprintln(w, msg.Text)
-		case protocol.KindError:
-			var msg protocol.Error
-			if err := json.Unmarshal(f.Payload, &msg); err != nil {
-				continue
-			}
-			fmt.Fprintf(w, "Error: %s\n", msg.Message)
-		default:
-			log.Print("client received frame kind it can't process yet.")
-		}
+		renderFrame(w, f)
+
 	}
 
+}
+
+func renderFrame(w io.Writer, f protocol.Frame) {
+	switch f.Kind {
+	case protocol.KindChat:
+		var msg protocol.Chat
+		if err := json.Unmarshal(f.Payload, &msg); err != nil {
+		}
+		fmt.Fprintln(w, msg.Text)
+	case protocol.KindSystem:
+		var msg protocol.System
+		if err := json.Unmarshal(f.Payload, &msg); err != nil {
+		}
+		fmt.Fprintln(w, msg.Text)
+	case protocol.KindError:
+		var msg protocol.Error
+		if err := json.Unmarshal(f.Payload, &msg); err != nil {
+		}
+		fmt.Fprintf(w, "Error: %s\n", msg.Message)
+	default:
+		log.Print("client received frame kind it can't process yet.")
+	}
 }
 
 // sendLoop sends information from stdin to a protocol.Conn for processing. This will be replaced

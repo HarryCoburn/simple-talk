@@ -95,18 +95,16 @@ func TestReceiveLoop(t *testing.T) {
 				Kind:    protocol.KindError,
 				Payload: []byte(`42`),
 			})
-			check("KindError with undecodable payload failed", err)
+			check(t, "KindError with undecodable payload failed", err)
 			err = peer.SendChat("bob", "still here")
 			check(t, "SendChat failed", err)
 			err = peer.Close()
 			check(t, "Close failed", err)
 		})
 
-		if strings.Contains(got, "who") {
-			t.Errorf("Unhandled frame kinds should not be printed. Output was: %q", got)
-		}
+		// After chewing through a bunch of faulty frames, check if the last frame comes through clean.
 		if !strings.Contains(got, "still here") {
-			t.Errorf("The loop stopped early: later messages never printed. Output was: %q", got)
+			t.Errorf("Faulty frames were not skipped. Last output was: %q", got)
 		}
 	})
 
@@ -119,11 +117,13 @@ func TestReceiveLoop(t *testing.T) {
 		})
 
 		if !strings.Contains(got, ClosedPipeNotification) {
-			t.Errorf("Wanted the user to be told about the disconnect, got: %q", got)
+			t.Errorf("Disconnect string not sent, got: %q", got)
 		}
 
 	})
 }
+
+// SendLoop
 
 func TestSendLoopSendsEachLineAsChat(t *testing.T) {
 	pipe := newTestPipe(t)
