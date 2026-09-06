@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -49,8 +48,7 @@ func Run(addr string) error {
 	return nil
 }
 
-// receiveLoop listens to a protocol.Conn for frames. If they are a KindChat or a KindSystem,
-// it displays the message. TODO: intercept additional frame types.
+// receiveLoop listens to a protocol.Conn for frames and passes them to renderFrame.
 func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 	defer func() { fmt.Fprintln(w, "You have been disconnected."); close(dead) }()
 	for {
@@ -63,31 +61,39 @@ func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 			fmt.Fprintf(w, "\nDisconnected: %v\n", err)
 			os.Exit(1)
 		}
-		renderFrame(w, f)
+		msg, err := formatFrame(f)
+		if err != nil {
+			// faulty frame
+			continue
+		}
+		fmt.Fprintln(w, msg)
 
 	}
 
 }
 
-func renderFrame(w io.Writer, f protocol.Frame) {
+func formatFrame(f protocol.Frame) (string, error) {
 	switch f.Kind {
 	case protocol.KindChat:
 		var msg protocol.Chat
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
+			return "", fmt.Errorf("Chat frame error: %w", err)
 		}
-		fmt.Fprintln(w, msg.Text)
+		return msg.Text, nil
 	case protocol.KindSystem:
 		var msg protocol.System
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
+			return "", fmt.Errorf("System frame error: %w", err)
 		}
-		fmt.Fprintln(w, msg.Text)
+		return msg.Text, nil
 	case protocol.KindError:
 		var msg protocol.Error
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
+			return "", fmt.Errorf("Error frame error: %w", err)
 		}
-		fmt.Fprintf(w, "Error: %s\n", msg.Message)
+		return msg.Message, nil
 	default:
-		log.Print("client received frame kind it can't process yet.")
+		return "", nil
 	}
 }
 

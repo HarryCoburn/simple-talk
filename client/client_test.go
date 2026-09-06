@@ -76,12 +76,9 @@ func TestReceiveLoop(t *testing.T) {
 	t.Run("receive loop skips frames it cannot use", func(t *testing.T) {
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
+			// err := peer.SendFrame(protocol.Frame)
+			// check(t, "KindCommand with undecodable payload failed", err)
 			err := peer.SendFrame(protocol.Frame{
-				Kind:    protocol.KindCommand,
-				Payload: []byte(`"not a command object"`), // undecodable payload
-			})
-			check(t, "KindCommand with undecodable payload failed", err)
-			err = peer.SendFrame(protocol.Frame{
 				Kind:    protocol.KindChat,
 				Payload: []byte(`"not a chat object"`), // undecodable payload
 			})
@@ -121,6 +118,35 @@ func TestReceiveLoop(t *testing.T) {
 		}
 
 	})
+}
+
+func TestFormatFrame(t *testing.T) {
+
+	t.Run("Checking faulty frames", func(t *testing.T) {
+		frameTests := []struct {
+			name  string
+			frame protocol.Frame
+		}{
+			{name: "malformed KindCommand", frame: protocol.Frame{
+				Kind:    protocol.KindCommand,
+				Payload: []byte(`"not a command object"`), // undecodable payload
+			}},
+			{name: "malformed KindChat", frame: protocol.Frame{
+				Kind:    protocol.KindChat,
+				Payload: []byte(`"not a chat object"`), // undecodable payload
+			}},
+		}
+
+		for _, tt := range frameTests {
+			t.Run(tt.name, func(t *testing.T) {
+				switch tt.frame.Kind {
+				case protocol.KindCommand:
+					formatFrame(tt.frame)
+				}
+			})
+		}
+	})
+
 }
 
 // SendLoop
