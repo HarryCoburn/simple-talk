@@ -20,8 +20,9 @@ func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
 	go send(pipe.Peer)
 
 	receiveLoop(&buf, pipe.Client, dead)
-	got := buf.String()
 	waitClosed(t, dead, "dead")
+	got := buf.String()
+
 	return got
 }
 
@@ -29,9 +30,17 @@ func TestReceiveLoop(t *testing.T) {
 
 	t.Run("receive loop prints chat messages", func(t *testing.T) {
 
+		check := func(op string, err error) {
+			if err != nil {
+				t.Errorf("%s: %v", op, err)
+			}
+		}
+
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
-			peer.SendChat("bob", "hello there")
-			peer.SendChat("carol", "hi bob")
+			err := peer.SendChat("bob", "hello there")
+			check("SendChat failed:", err)
+			err = peer.SendChat("carol", "hi bob")
+			check("SendChat failed:", err)
 			peer.Close() // ends the loop
 		})
 		for _, want := range []string{"hello there", "hi bob"} {
@@ -42,33 +51,28 @@ func TestReceiveLoop(t *testing.T) {
 
 	})
 
-	// t.Run("receive loop prints system and error frames", func(t *testing.T) {
-	// 	pipe := newTestPipe(t)
-	// 	dead := make(chan struct{})
-	// 	buf := bytes.Buffer{}
+	t.Run("receive loop prints system and error frames", func(t *testing.T) {
+		check := func(op string, err error) {
+			if err != nil {
+				t.Errorf("%s: %v", op, err)
+			}
+		}
 
-	// 	go func() {
-	// 		pipe.Peer.SendSystem("bob joined the room")
-	// 		pipe.Peer.SendError("unknown command")
-	// 		pipe.Peer.Close()
-	// 	}()
+		got := runReceiveLoop(t, func(peer *protocol.Conn) {
+			err := peer.SendSystem("bob joined the room")
+			check("SendSystem failed:", err)
+			err = peer.SendError("unknown command")
+			check("SendError failed:", err)
+			peer.Close()
+		})
 
-	// 	receiveLoop(&buf, pipe.Client, dead)
-	// 	got := buf.String()
-
-	// 	if !strings.Contains(got, "bob joined the room") {
-	// 		t.Errorf("Wanted the system message in the output, got: %q", got)
-	// 	}
-	// 	if !strings.Contains(got, "Error: unknown command") {
-	// 		t.Errorf("Wanted the error message labelled as an error, got: %q", got)
-	// 	}
-	// 	waitClosed(t, dead, "dead")
-	// })
-}
-
-// System and error frames are surfaced to the user, each in its own form.
-func TestReceiveLoopPrintsSystemAndErrorFrames(t *testing.T) {
-
+		if !strings.Contains(got, "bob joined the room") {
+			t.Errorf("Wanted the system message in the output, got: %q", got)
+		}
+		if !strings.Contains(got, "Error: unknown command") {
+			t.Errorf("Wanted the error message labelled as an error, got: %q", got)
+		}
+	})
 }
 
 // Skip frames the client cannot handle and cannot decode

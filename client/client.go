@@ -52,7 +52,7 @@ func Run(addr string) error {
 // receiveLoop listens to a protocol.Conn for frames. If they are a KindChat or a KindSystem,
 // it displays the message. TODO: intercept additional frame types.
 func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
-	defer func() { fmt.Println("You have been disconnected."); close(dead) }()
+	defer func() { fmt.Fprintln(w, "You have been disconnected."); close(dead) }()
 	for {
 		f, err := conn.Recv()
 		if err != nil {
@@ -69,13 +69,13 @@ func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 			if err := json.Unmarshal(f.Payload, &msg); err != nil {
 				continue
 			}
-			fmt.Println(msg.Text)
+			fmt.Fprintln(w, msg.Text)
 		case protocol.KindSystem:
 			var msg protocol.System
 			if err := json.Unmarshal(f.Payload, &msg); err != nil {
 				continue
 			}
-			fmt.Println(msg.Text)
+			fmt.Fprintln(w, msg.Text)
 		case protocol.KindError:
 			var msg protocol.Error
 			if err := json.Unmarshal(f.Payload, &msg); err != nil {
