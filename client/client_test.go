@@ -28,22 +28,24 @@ func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
 	return got
 }
 
+func check(t *testing.T, op string, err error) {
+	t.Helper()
+	if err != nil {
+		t.Errorf("%s: %v", op, err)
+	}
+}
+
 func TestReceiveLoop(t *testing.T) {
 
 	t.Run("receive loop prints chat messages", func(t *testing.T) {
-		check := func(op string, err error) {
-			if err != nil {
-				t.Errorf("%s: %v", op, err)
-			}
-		}
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
 			err := peer.SendChat("bob", "hello there")
-			check("SendChat failed:", err)
+			check(t, "SendChat failed:", err)
 			err = peer.SendChat("carol", "hi bob")
-			check("SendChat failed:", err)
+			check(t, "SendChat failed:", err)
 			err = peer.Close() // ends the loop
-			check("Close failed", err)
+			check(t, "Close failed", err)
 		})
 		for _, want := range []string{"hello there", "hi bob"} {
 			if !strings.Contains(got, want) {
@@ -53,19 +55,14 @@ func TestReceiveLoop(t *testing.T) {
 	})
 
 	t.Run("receive loop prints system and error frames", func(t *testing.T) {
-		check := func(op string, err error) {
-			if err != nil {
-				t.Errorf("%s: %v", op, err)
-			}
-		}
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
 			err := peer.SendSystem("bob joined the room")
-			check("SendSystem failed:", err)
+			check(t, "SendSystem failed:", err)
 			err = peer.SendError("unknown command")
-			check("SendError failed:", err)
+			check(t, "SendError failed:", err)
 			err = peer.Close()
-			check("Close failed", err)
+			check(t, "Close failed", err)
 		})
 
 		if !strings.Contains(got, "bob joined the room") {
@@ -77,37 +74,32 @@ func TestReceiveLoop(t *testing.T) {
 	})
 
 	t.Run("receive loop skips frames it cannot use", func(t *testing.T) {
-		check := func(op string, err error) {
-			if err != nil {
-				t.Errorf("%s: %v", op, err)
-			}
-		}
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
 			err := peer.SendFrame(protocol.Frame{
 				Kind:    protocol.KindCommand,
 				Payload: []byte(`"not a command object"`), // undecodable payload
 			})
-			check("KindCommand with undecodable payload failed", err)
+			check(t, "KindCommand with undecodable payload failed", err)
 			err = peer.SendFrame(protocol.Frame{
 				Kind:    protocol.KindChat,
 				Payload: []byte(`"not a chat object"`), // undecodable payload
 			})
-			check("KindChat with undecodable payload failed", err)
+			check(t, "KindChat with undecodable payload failed", err)
 			err = peer.SendFrame(protocol.Frame{
 				Kind:    protocol.KindSystem,
 				Payload: []byte(`["not a system object"]`),
 			})
-			check("KindSystem with undecodable payload failed", err)
-			peer.SendFrame(protocol.Frame{
+			check(t, "KindSystem with undecodable payload failed", err)
+			err = peer.SendFrame(protocol.Frame{
 				Kind:    protocol.KindError,
 				Payload: []byte(`42`),
 			})
 			check("KindError with undecodable payload failed", err)
 			err = peer.SendChat("bob", "still here")
-			check("SendChat failed", err)
+			check(t, "SendChat failed", err)
 			err = peer.Close()
-			check("Close failed", err)
+			check(t, "Close failed", err)
 		})
 
 		if strings.Contains(got, "who") {
@@ -119,15 +111,10 @@ func TestReceiveLoop(t *testing.T) {
 	})
 
 	t.Run("receive loop closes dead on disconnect", func(t *testing.T) {
-		check := func(op string, err error) {
-			if err != nil {
-				t.Errorf("%s: %v", op, err)
-			}
-		}
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
 			err := peer.Close()
-			check("Close failed", err)
+			check(t, "Close failed", err)
 
 		})
 
