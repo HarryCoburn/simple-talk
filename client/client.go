@@ -45,22 +45,22 @@ func Run(addr string) error {
 
 	dead := make(chan struct{})
 	go sendLoop(conn, name, stdin, dead)
-	receiveLoop(conn, dead)
+	receiveLoop(os.Stdout, conn, dead)
 	return nil
 }
 
 // receiveLoop listens to a protocol.Conn for frames. If they are a KindChat or a KindSystem,
 // it displays the message. TODO: intercept additional frame types.
-func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
+func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 	defer func() { fmt.Println("You have been disconnected."); close(dead) }()
 	for {
 		f, err := conn.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				fmt.Printf("Quitting client...\n")
+				fmt.Fprintf(w, "Quitting client...\n")
 				return
 			}
-			fmt.Printf("\nDisconnected: %v\n", err)
+			fmt.Fprintf(w, "\nDisconnected: %v\n", err)
 			os.Exit(1)
 		}
 		switch f.Kind {
@@ -81,7 +81,7 @@ func receiveLoop(conn *protocol.Conn, dead chan struct{}) {
 			if err := json.Unmarshal(f.Payload, &msg); err != nil {
 				continue
 			}
-			fmt.Printf("Error: %s\n", msg.Message)
+			fmt.Fprintf(w, "Error: %s\n", msg.Message)
 		default:
 			log.Print("client received frame kind it can't process yet.")
 		}

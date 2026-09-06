@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"errors"
 	"net"
 	"slices"
@@ -10,52 +11,59 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
-func TestReceiveLoopPrintsChatMessages(t *testing.T) {
+func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
+	t.Helper()
+	pipe := newTestPipe(t)
+	dead := make(chan struct{})
+	buf := bytes.Buffer{}
+
+	go send(pipe.Peer)
+
+	receiveLoop(&buf, pipe.Client, dead)
+	got := buf.String()
+	waitClosed(t, dead, "dead")
+	return got
+}
+
+func TestReceiveLoop(t *testing.T) {
 
 	t.Run("receive loop prints chat messages", func(t *testing.T) {
-		pipe := newTestPipe(t)
-		dead := make(chan struct{})
 
-		go func() {
-			pipe.Peer.SendChat("bob", "hello there")
-			pipe.Peer.SendChat("carol", "hi bob")
-			pipe.Peer.Close() // ends the loop
-		}()
-
-		out := captureStdout(t, func() {
-			receiveLoop(pipe.Client, dead)
+		got := runReceiveLoop(t, func(peer *protocol.Conn) {
+			peer.SendChat("bob", "hello there")
+			peer.SendChat("carol", "hi bob")
+			peer.Close() // ends the loop
 		})
-
 		for _, want := range []string{"hello there", "hi bob"} {
-			if !strings.Contains(out, want) {
-				t.Errorf("Wanted the output to contain %q, got: %q", want, out)
+			if !strings.Contains(got, want) {
+				t.Errorf("Wanted the output to contain %q, got: %q", want, got)
 			}
 		}
-		waitClosed(t, dead, "dead")
+
 	})
 
-	t.Run("receive loop prints system and error frames", func(t *testing.T) {
-		pipe := newTestPipe(t)
-		dead := make(chan struct{})
+	// t.Run("receive loop prints system and error frames", func(t *testing.T) {
+	// 	pipe := newTestPipe(t)
+	// 	dead := make(chan struct{})
+	// 	buf := bytes.Buffer{}
 
-		go func() {
-			pipe.Peer.SendSystem("bob joined the room")
-			pipe.Peer.SendError("unknown command")
-			pipe.Peer.Close()
-		}()
+	// 	go func() {
+	// 		pipe.Peer.SendSystem("bob joined the room")
+	// 		pipe.Peer.SendError("unknown command")
+	// 		pipe.Peer.Close()
+	// 	}()
 
-		out := captureStdout(t, func() {
-			receiveLoop(pipe.Client, dead)
-		})
+	// 	receiveLoop(&buf, pipe.Client, dead)
+	// 	got := buf.String()
 
-		if !strings.Contains(out, "bob joined the room") {
-			t.Errorf("Wanted the system message in the output, got: %q", out)
-		}
-		if !strings.Contains(out, "Error: unknown command") {
-			t.Errorf("Wanted the error message labelled as an error, got: %q", out)
-		}
-		waitClosed(t, dead, "dead")
-	})
+	// 	if !strings.Contains(got, "bob joined the room") {
+	// 		t.Errorf("Wanted the system message in the output, got: %q", got)
+	// 	}
+	// 	if !strings.Contains(got, "Error: unknown command") {
+	// 		t.Errorf("Wanted the error message labelled as an error, got: %q", got)
+	// 	}
+	// 	waitClosed(t, dead, "dead")
+	// })
 }
 
 // System and error frames are surfaced to the user, each in its own form.
@@ -67,6 +75,7 @@ func TestReceiveLoopPrintsSystemAndErrorFrames(t *testing.T) {
 func TestReceiveLoopSkipsFramesItCannotUse(t *testing.T) {
 	pipe := newTestPipe(t)
 	dead := make(chan struct{})
+	buf := bytes.Buffer{}
 
 	go func() {
 		pipe.Peer.SendFrame(protocol.Frame{
@@ -89,15 +98,14 @@ func TestReceiveLoopSkipsFramesItCannotUse(t *testing.T) {
 		pipe.Peer.Close()
 	}()
 
-	out := captureStdout(t, func() {
-		receiveLoop(pipe.Client, dead)
-	})
+	receiveLoop(&buf, pipe.Client, dead)
+	got := buf.String()
 
-	if strings.Contains(out, "who") {
-		t.Errorf("Unhandled frame kinds should not be printed. Output was: %q", out)
+	if strings.Contains(got, "who") {
+		t.Errorf("Unhandled frame kinds should not be printed. Output was: %q", got)
 	}
-	if !strings.Contains(out, "still here") {
-		t.Errorf("The loop stopped early: later messages never printed. Output was: %q", out)
+	if !strings.Contains(got, "still here") {
+		t.Errorf("The loop stopped early: later messages never printed. Output was: %q", got)
 	}
 	waitClosed(t, dead, "dead")
 }
@@ -106,16 +114,15 @@ func TestReceiveLoopSkipsFramesItCannotUse(t *testing.T) {
 func TestReceiveLoopClosesDeadOnDisconnect(t *testing.T) {
 	pipe := newTestPipe(t)
 	dead := make(chan struct{})
+	buf := bytes.Buffer{}
 
 	go pipe.Peer.Close()
 
-	out := captureStdout(t, func() {
-		receiveLoop(pipe.Client, dead)
-	})
-
+	receiveLoop(&buf, pipe.Client, dead)
 	waitClosed(t, dead, "dead")
-	if !strings.Contains(out, "Disconnected") {
-		t.Errorf("Wanted the user to be told about the disconnect, got: %q", out)
+	got := buf.String()
+	if !strings.Contains(got, "Disconnected") {
+		t.Errorf("Wanted the user to be told about the disconnect, got: %q", got)
 	}
 }
 
