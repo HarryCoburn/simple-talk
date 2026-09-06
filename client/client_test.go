@@ -11,6 +11,8 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
+const ClosedPipeNotification = "Quitting client...\nYou have been disconnected.\n"
+
 func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
 	t.Helper()
 	pipe := newTestPipe(t)
@@ -29,7 +31,6 @@ func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
 func TestReceiveLoop(t *testing.T) {
 
 	t.Run("receive loop prints chat messages", func(t *testing.T) {
-
 		check := func(op string, err error) {
 			if err != nil {
 				t.Errorf("%s: %v", op, err)
@@ -41,14 +42,14 @@ func TestReceiveLoop(t *testing.T) {
 			check("SendChat failed:", err)
 			err = peer.SendChat("carol", "hi bob")
 			check("SendChat failed:", err)
-			peer.Close() // ends the loop
+			err = peer.Close() // ends the loop
+			check("Close failed", err)
 		})
 		for _, want := range []string{"hello there", "hi bob"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("Wanted the output to contain %q, got: %q", want, got)
 			}
 		}
-
 	})
 
 	t.Run("receive loop prints system and error frames", func(t *testing.T) {
@@ -63,7 +64,8 @@ func TestReceiveLoop(t *testing.T) {
 			check("SendSystem failed:", err)
 			err = peer.SendError("unknown command")
 			check("SendError failed:", err)
-			peer.Close()
+			err = peer.Close()
+			check("Close failed", err)
 		})
 
 		if !strings.Contains(got, "bob joined the room") {
@@ -73,61 +75,66 @@ func TestReceiveLoop(t *testing.T) {
 			t.Errorf("Wanted the error message labelled as an error, got: %q", got)
 		}
 	})
-}
 
-// Skip frames the client cannot handle and cannot decode
-func TestReceiveLoopSkipsFramesItCannotUse(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
-	buf := bytes.Buffer{}
+	t.Run("receive loop skips frames it cannot use", func(t *testing.T) {
+		check := func(op string, err error) {
+			if err != nil {
+				t.Errorf("%s: %v", op, err)
+			}
+		}
 
-	go func() {
-		pipe.Peer.SendFrame(protocol.Frame{
-			Kind:    protocol.KindCommand,
-			Payload: []byte(`{"name":"who"`), // undecodable payload
+		got := runReceiveLoop(t, func(peer *protocol.Conn) {
+			err := peer.SendFrame(protocol.Frame{
+				Kind:    protocol.KindCommand,
+				Payload: []byte(`{"name":"who"`), // undecodable payload
+			})
+			check("KindCommand with undecodable payload failed", err)
+			err = peer.SendFrame(protocol.Frame{
+				Kind:    protocol.KindChat,
+				Payload: []byte(`"not a chat object"`), // undecodable payload
+			})
+			check("KindChat with undecodable payload failed", err)
+			err = peer.SendFrame(protocol.Frame{
+				Kind:    protocol.KindSystem,
+				Payload: []byte(`["not a system object"]`),
+			})
+			check("KindSystem with undecodable payload failed", err)
+			peer.SendFrame(protocol.Frame{
+				Kind:    protocol.KindError,
+				Payload: []byte(`42`),
+			})
+			check("KindError with undecodable payload failed", err)
+			err = peer.SendChat("bob", "still here")
+			check("SendChat failed", err)
+			peer.Close()
 		})
-		pipe.Peer.SendFrame(protocol.Frame{
-			Kind:    protocol.KindChat,
-			Payload: []byte(`"not a chat object"`), // undecodable payload
+
+		if strings.Contains(got, "who") {
+			t.Errorf("Unhandled frame kinds should not be printed. Output was: %q", got)
+		}
+		if !strings.Contains(got, "still here") {
+			t.Errorf("The loop stopped early: later messages never printed. Output was: %q", got)
+		}
+	})
+
+	t.Run("receive loop closes dead on disconnect", func(t *testing.T) {
+		check := func(op string, err error) {
+			if err != nil {
+				t.Errorf("%s: %v", op, err)
+			}
+		}
+
+		got := runReceiveLoop(t, func(peer *protocol.Conn) {
+			err := peer.Close()
+			check("Close failed", err)
+
 		})
-		pipe.Peer.SendFrame(protocol.Frame{
-			Kind:    protocol.KindSystem,
-			Payload: []byte(`["not a system object"]`),
-		})
-		pipe.Peer.SendFrame(protocol.Frame{
-			Kind:    protocol.KindError,
-			Payload: []byte(`42`),
-		})
-		pipe.Peer.SendChat("bob", "still here")
-		pipe.Peer.Close()
-	}()
 
-	receiveLoop(&buf, pipe.Client, dead)
-	got := buf.String()
+		if !strings.Contains(got, ClosedPipeNotification) {
+			t.Errorf("Wanted the user to be told about the disconnect, got: %q", got)
+		}
 
-	if strings.Contains(got, "who") {
-		t.Errorf("Unhandled frame kinds should not be printed. Output was: %q", got)
-	}
-	if !strings.Contains(got, "still here") {
-		t.Errorf("The loop stopped early: later messages never printed. Output was: %q", got)
-	}
-	waitClosed(t, dead, "dead")
-}
-
-// Losing the connection closes dead, which is what unblocks the send loop.
-func TestReceiveLoopClosesDeadOnDisconnect(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
-	buf := bytes.Buffer{}
-
-	go pipe.Peer.Close()
-
-	receiveLoop(&buf, pipe.Client, dead)
-	waitClosed(t, dead, "dead")
-	got := buf.String()
-	if !strings.Contains(got, "Disconnected") {
-		t.Errorf("Wanted the user to be told about the disconnect, got: %q", got)
-	}
+	})
 }
 
 func TestSendLoopSendsEachLineAsChat(t *testing.T) {
