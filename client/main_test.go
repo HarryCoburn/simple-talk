@@ -11,49 +11,56 @@ import (
 )
 
 func TestReceiveLoopPrintsChatMessages(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
 
-	go func() {
-		pipe.Peer.SendChat("bob", "hello there")
-		pipe.Peer.SendChat("carol", "hi bob")
-		pipe.Peer.Close() // ends the loop
-	}()
+	t.Run("receive loop prints chat messages", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		dead := make(chan struct{})
 
-	out := captureStdout(t, func() {
-		receiveLoop(pipe.Client, dead)
+		go func() {
+			pipe.Peer.SendChat("bob", "hello there")
+			pipe.Peer.SendChat("carol", "hi bob")
+			pipe.Peer.Close() // ends the loop
+		}()
+
+		out := captureStdout(t, func() {
+			receiveLoop(pipe.Client, dead)
+		})
+
+		for _, want := range []string{"hello there", "hi bob"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("Wanted the output to contain %q, got: %q", want, out)
+			}
+		}
+		waitClosed(t, dead, "dead")
 	})
 
-	for _, want := range []string{"hello there", "hi bob"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("Wanted the output to contain %q, got: %q", want, out)
+	t.Run("receive loop prints system and error frames", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		dead := make(chan struct{})
+
+		go func() {
+			pipe.Peer.SendSystem("bob joined the room")
+			pipe.Peer.SendError("unknown command")
+			pipe.Peer.Close()
+		}()
+
+		out := captureStdout(t, func() {
+			receiveLoop(pipe.Client, dead)
+		})
+
+		if !strings.Contains(out, "bob joined the room") {
+			t.Errorf("Wanted the system message in the output, got: %q", out)
 		}
-	}
-	waitClosed(t, dead, "dead")
+		if !strings.Contains(out, "Error: unknown command") {
+			t.Errorf("Wanted the error message labelled as an error, got: %q", out)
+		}
+		waitClosed(t, dead, "dead")
+	})
 }
 
 // System and error frames are surfaced to the user, each in its own form.
 func TestReceiveLoopPrintsSystemAndErrorFrames(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
 
-	go func() {
-		pipe.Peer.SendSystem("bob joined the room")
-		pipe.Peer.SendError("unknown command")
-		pipe.Peer.Close()
-	}()
-
-	out := captureStdout(t, func() {
-		receiveLoop(pipe.Client, dead)
-	})
-
-	if !strings.Contains(out, "bob joined the room") {
-		t.Errorf("Wanted the system message in the output, got: %q", out)
-	}
-	if !strings.Contains(out, "Error: unknown command") {
-		t.Errorf("Wanted the error message labelled as an error, got: %q", out)
-	}
-	waitClosed(t, dead, "dead")
 }
 
 // Skip frames the client cannot handle and cannot decode
