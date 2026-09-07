@@ -125,22 +125,24 @@ func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan s
 			return
 		default:
 		}
-		line := scan.Text()
+		intent := classify(scan.Text())
 		var err error
-		if strings.TrimSpace(line) == "" {
+		switch intent.Intent {
+		case intentNothing:
 			continue
-		}
-		if cmd, args, ok := parseInput(line); ok {
-			err = conn.SendCommand(cmd, args)
-		} else {
-			err = conn.SendChat(name, unescapeInput(line))
+		case intentCommand:
+			err = conn.SendCommand(intent.Cmd, intent.Args)
+		case intentChat:
+			err = conn.SendChat(name, intent.Text)
+		default:
+			// Consider a log here
+			continue
 		}
 		if err != nil {
 			fmt.Printf("Send failed: %v\n", err)
 			return
 		}
 	}
-	conn.Close()
 }
 
 func classify(line string) inputIntent {
@@ -149,9 +151,8 @@ func classify(line string) inputIntent {
 	}
 	if cmd, args, ok := parseInput(line); ok {
 		return inputIntent{Intent: intentCommand, Text: "", Cmd: cmd, Args: args}
-	} else {
-		return inputIntent{Intent: intentChat, Text: unescapeInput(line), Cmd: "", Args: nil}
 	}
+	return inputIntent{Intent: intentChat, Text: unescapeInput(line), Cmd: "", Args: nil}
 }
 
 func parseInput(line string) (name string, args []string, ok bool) {

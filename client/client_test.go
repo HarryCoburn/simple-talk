@@ -152,9 +152,13 @@ func TestClassify(t *testing.T) {
 		line string
 		want inputIntent
 	}{
-		{name: "nothing intent due to blank line", line: "", want: inputIntent{Intent: intentNothing, Text: "", Cmd: "", Args: nil}},
+		{name: "nothing intent due to nil string", line: "", want: inputIntent{Intent: intentNothing, Text: "", Cmd: "", Args: nil}},
+		{name: "nothing intent due to whitespace string", line: "   ", want: inputIntent{Intent: intentNothing, Text: "", Cmd: "", Args: nil}},
 		{name: "command intent", line: "/who", want: inputIntent{Intent: intentCommand, Text: "", Cmd: "who", Args: []string{}}},
+		{name: "command intent with args", line: "/msg bob hi", want: inputIntent{Intent: intentCommand, Text: "", Cmd: "msg", Args: []string{"bob", "hi"}}},
 		{name: "chat intent", line: "hello", want: inputIntent{Intent: intentChat, Text: "hello", Cmd: "", Args: nil}},
+		{name: "chat intent with escaped command string", line: "//who", want: inputIntent{Intent: intentChat, Text: "/who", Cmd: "", Args: nil}},
+		{name: "lone slash creates chat intent", line: "/", want: inputIntent{Intent: intentChat, Text: "/", Cmd: "", Args: nil}},
 	}
 
 	compareInputIntents := func(got, want inputIntent) bool {
@@ -177,7 +181,7 @@ func TestClassify(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := classify(tt.line)
 			if !compareInputIntents(got, tt.want) {
-				t.Error("got %w want %w", got, tt.want)
+				t.Errorf("got %+v want %+v", got, tt.want)
 			}
 		})
 	}
