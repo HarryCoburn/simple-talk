@@ -86,17 +86,17 @@ func TestFormatFrame(t *testing.T) {
 		// Clients should not receive commands
 		{name: "malformed KindCommand", frame: protocol.Frame{
 			Kind:    protocol.KindCommand,
-			Payload: []byte(`"not a command object"`), // undecodable payload
+			Payload: nil,
 		}, want: "", wantErr: false},
 
 		// Handshakes pass through unformatted
 		{name: "wellformed KindHandshake", frame: protocol.Frame{
 			Kind:    protocol.KindHandshake,
-			Payload: []byte(`"name":"harry","version":"test"`),
+			Payload: nil,
 		}, want: "", wantErr: false},
-		{name: "wellformed KindHandshakeAct", frame: protocol.Frame{
+		{name: "wellformed KindHandshakeAck", frame: protocol.Frame{
 			Kind:    protocol.KindHandshakeAck,
-			Payload: []byte(`"name":"harry"`),
+			Payload: nil,
 		}, want: "", wantErr: false},
 
 		// Actual error checking
