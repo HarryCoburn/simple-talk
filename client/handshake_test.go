@@ -7,6 +7,10 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
+func TestNegotiateName(t *testing.T) {
+
+}
+
 // Tests for the handshake: picking a username the server will accept.
 //
 // The name rules themselves are internal/validate's to test; negotiateName now
