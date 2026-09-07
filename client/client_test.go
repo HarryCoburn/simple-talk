@@ -256,7 +256,7 @@ func TestSendLoop(t *testing.T) {
 
 		sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "     ", "/msg bob hi"), dead)
 
-		// sendLoop doesn't close the cnnection, so the drain ends when this does.
+		// sendLoop doesn't close the connection, so the drain ends when this does.
 		pipe.Client.Close()
 		waitClosed(t, done, "peer")
 
