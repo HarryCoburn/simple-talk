@@ -146,6 +146,44 @@ func TestFormatFrame(t *testing.T) {
 
 // SendLoop
 
+func TestClassify(t *testing.T) {
+	classifyTests := []struct {
+		name string
+		line string
+		want inputIntent
+	}{
+		{name: "nothing intent due to blank line", line: "", want: inputIntent{Intent: intentNothing, Text: "", Cmd: "", Args: nil}},
+		{name: "command intent", line: "/who", want: inputIntent{Intent: intentCommand, Text: "", Cmd: "who", Args: []string{}}},
+		{name: "chat intent", line: "hello", want: inputIntent{Intent: intentChat, Text: "hello", Cmd: "", Args: nil}},
+	}
+
+	compareInputIntents := func(got, want inputIntent) bool {
+		if got.Intent != want.Intent {
+			return false
+		}
+		if got.Cmd != want.Cmd {
+			return false
+		}
+		if got.Text != want.Text {
+			return false
+		}
+		if !slices.Equal(got.Args, want.Args) {
+			return false
+		}
+		return true
+	}
+
+	for _, tt := range classifyTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classify(tt.line)
+			if !compareInputIntents(got, tt.want) {
+				t.Error("got %w want %w", got, tt.want)
+			}
+		})
+	}
+
+}
+
 func TestSendLoopSendsEachLineAsChat(t *testing.T) {
 	pipe := newTestPipe(t)
 	dead := make(chan struct{})

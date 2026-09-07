@@ -14,17 +14,27 @@ import (
 )
 
 const (
-	userNamePrompt string = "Please state your username: "
-	DefaultAddr    string = "localhost:2069"
-	ChatFrameErr   string = "Chat frame error: %w"
-	SystemFrameErr string = "System frame error: %w"
-	ErrorFrameErr  string = "Error frame error: %w"
-	MsgFormat      string = "<%s> %s\n"
-	ErrFormat      string = "Error: %s\n"
-	SystemFormat   string = "%s\n"
+	userNamePrompt string     = "Please state your username: "
+	DefaultAddr    string     = "localhost:2069"
+	ChatFrameErr   string     = "Chat frame error: %w"
+	SystemFrameErr string     = "System frame error: %w"
+	ErrorFrameErr  string     = "Error frame error: %w"
+	MsgFormat      string     = "<%s> %s\n"
+	ErrFormat      string     = "Error: %s\n"
+	SystemFormat   string     = "%s\n"
+	intentNothing  intentKind = 0
+	intentChat     intentKind = 1
+	intentCommand  intentKind = 2
 )
 
-// DefaultAddr is the server the client dials when none is given.
+type intentKind int
+
+type inputIntent struct {
+	Intent intentKind
+	Text   string
+	Cmd    string
+	Args   []string
+}
 
 // Run connects to the server at addr, negotiates a username, then runs a
 // receive loop and a send loop.
@@ -56,7 +66,7 @@ func Run(addr string) error {
 	return nil
 }
 
-// receiveLoop listens to a protocol.Conn for frames and passes them to renderFrame.
+// receiveLoop listens to a protocol.Conn for frames and passes them to formatFrame.
 func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 	defer func() { fmt.Fprintln(w, "You have been disconnected."); close(dead) }()
 	for {
@@ -80,6 +90,7 @@ func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 
 }
 
+// formatFrame formats frames received from the server to client-specified strings
 func formatFrame(f protocol.Frame) (string, error) {
 	switch f.Kind {
 	case protocol.KindChat:
@@ -130,6 +141,17 @@ func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan s
 		}
 	}
 	conn.Close()
+}
+
+func classify(line string) inputIntent {
+	if strings.TrimSpace(line) == "" {
+		return inputIntent{Intent: intentNothing, Text: "", Cmd: "", Args: nil}
+	}
+	if cmd, args, ok := parseInput(line); ok {
+		return inputIntent{Intent: intentCommand, Text: "", Cmd: cmd, Args: args}
+	} else {
+		return inputIntent{Intent: intentChat, Text: unescapeInput(line), Cmd: "", Args: nil}
+	}
 }
 
 func parseInput(line string) (name string, args []string, ok bool) {
