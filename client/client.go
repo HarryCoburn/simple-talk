@@ -61,7 +61,7 @@ func Run(addr string) error {
 	}
 
 	dead := make(chan struct{})
-	go sendLoop(conn, name, stdin, dead)
+	go sendLoop(os.Stdout, conn, name, stdin, dead)
 	receiveLoop(os.Stdout, conn, dead)
 	return nil
 }
@@ -118,7 +118,7 @@ func formatFrame(f protocol.Frame) (string, error) {
 
 // sendLoop sends information from stdin to a protocol.Conn for processing. This will be replaced
 // once we begin BubbleTea usage.
-func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan struct{}) {
+func sendLoop(w io.Writer, conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan struct{}) {
 	for scan.Scan() {
 		select {
 		case <-dead:
@@ -139,7 +139,7 @@ func sendLoop(conn *protocol.Conn, name string, scan *bufio.Scanner, dead chan s
 			continue
 		}
 		if err != nil {
-			fmt.Printf("Send failed: %v\n", err)
+			fmt.Fprintf(w, "Send failed: %v\n", err)
 			return
 		}
 	}

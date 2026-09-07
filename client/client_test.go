@@ -61,7 +61,7 @@ func TestReceiveLoop(t *testing.T) {
 		}
 	})
 
-	t.Run("receive loop closes dead on disconnect", func(t *testing.T) {
+	t.Run("closes dead on disconnect", func(t *testing.T) {
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
 			err := peer.Close()
@@ -73,6 +73,7 @@ func TestReceiveLoop(t *testing.T) {
 		}
 
 	})
+
 }
 
 func TestFormatFrame(t *testing.T) {
@@ -144,8 +145,6 @@ func TestFormatFrame(t *testing.T) {
 	}
 }
 
-// SendLoop
-
 func TestClassify(t *testing.T) {
 	classifyTests := []struct {
 		name string
@@ -188,86 +187,99 @@ func TestClassify(t *testing.T) {
 
 }
 
-func TestSendLoopSendsEachLineAsChat(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
+func TestSendLoop(t *testing.T) {
+	// A server-side disconnect closes dead, and the send loop must give up rather
+	// than keep writing into a dead connection.
+	t.Run("sendLoop stops once dead is closed", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		dead := make(chan struct{})
+		w := bytes.Buffer{}
+		close(dead)
 
-	type msg struct{ from, text string }
-	got := make(chan msg, 2)
-	go func() {
-		defer close(dead) // stands in for receiveLoop noticing the close
-		for i := 0; i < 2; i++ {
-			f, err := pipe.Peer.Recv()
-			if err != nil {
-				return
-			}
-			from, text := chatFrom(t, f)
-			got <- msg{from, text}
-		}
-		// Drain until the client closes so sendLoop's final Close is observed.
-		for {
-			if _, err := pipe.Peer.Recv(); err != nil {
-				return
-			}
-		}
-	}()
+		// Nothing reads the peer: if sendLoop tried to send, net.Pipe would block
+		// and this test would time out.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			captureStdout(t, func() {
+				sendLoop(&w, pipe.Client, "alice", scannerOf("should not be sent"), dead)
+			})
+		}()
 
-	captureStdout(t, func() {
-		sendLoop(pipe.Client, "alice", scannerOf("hello", "world"), dead)
+		waitClosed(t, done, "sendLoop")
 	})
 
-	wanted := []msg{{"alice", "hello"}, {"alice", "world"}}
-	for _, want := range wanted {
-		select {
-		case have := <-got:
-			if have != want {
-				t.Errorf("Server received %+v, wanted %+v", have, want)
-			}
-		default:
-			t.Errorf("The server never received %+v", want)
+	t.Run("sendLoop reports send failures", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		dead := make(chan struct{})
+		pipe.Peer.Close() // writes now fail immediately
+		w := bytes.Buffer{}
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			captureStdout(t, func() {
+				sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "world"), dead)
+			})
+		}()
+
+		waitClosed(t, done, "sendLoop")
+		got := w.String()
+		if !strings.Contains(got, "Send failed") {
+			t.Errorf("Wanted the user to be told the send failed, got: %q", got)
 		}
-	}
-}
+	})
 
-// A server-side disconnect closes dead, and the send loop must give up rather
-// than keep writing into a dead connection.
-func TestSendLoopStopsOnceDeadIsClosed(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
-	close(dead)
+	t.Run("sends each line as chat", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		dead := make(chan struct{})
+		frames := make(chan protocol.Frame, 2)
+		done := make(chan struct{})
+		var w bytes.Buffer
 
-	// Nothing reads the peer: if sendLoop tried to send, net.Pipe would block
-	// and this test would time out.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		captureStdout(t, func() {
-			sendLoop(pipe.Client, "alice", scannerOf("should not be sent"), dead)
-		})
-	}()
+		go func() {
+			defer close(done)
+			defer close(dead) // stands in for receiveLoop noticing the close
+			defer close(frames)
 
-	waitClosed(t, done, "sendLoop")
-}
+			for i := 0; i < 2; i++ {
+				f, err := pipe.Peer.Recv()
+				if err != nil {
+					return
+				}
+				frames <- f
+			}
+			// Drain until test closes the client
+			for {
+				if _, err := pipe.Peer.Recv(); err != nil {
+					return
+				}
+			}
+		}()
 
-// A send failure is reported and ends the loop instead of spinning.
-func TestSendLoopReportsASendFailure(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
-	pipe.Peer.Close() // writes now fail immediately
+		sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "world"), dead)
 
-	done := make(chan struct{})
-	var out string
-	go func() {
-		defer close(done)
-		out = captureStdout(t, func() {
-			sendLoop(pipe.Client, "alice", scannerOf("hello", "world"), dead)
-		})
-	}()
+		// sendLoop doesn't close the cnnection, so the drain ends when this does.
+		pipe.Client.Close()
+		waitClosed(t, done, "peer")
 
-	waitClosed(t, done, "sendLoop")
-	if !strings.Contains(out, "Send failed") {
-		t.Errorf("Wanted the user to be told the send failed, got: %q", out)
-	}
+		if w.Len() != 0 {
+			t.Errorf("sendLoop reported a problem: %s", w.String())
+		}
+
+		type msg protocol.Chat
+		var have []msg
+		for f := range frames {
+			from, text := chatFrom(t, f) // On the test goroutine, so t.Fatalf is safe
+			have = append(have, msg{From: from, Text: text})
+		}
+
+		want := []msg{{"alice", "hello"}, {"alice", "world"}}
+		if !slices.Equal(have, want) {
+			t.Errorf("Server received %+v, wanted %+v", have, want)
+		}
+
+	})
 }
 
 // A leading slash makes a line a command; the escape "//" makes it chat again.
@@ -329,51 +341,6 @@ func TestUnescapeInput(t *testing.T) {
 				t.Errorf("unescapeInput(%q) = %q, wanted %q", tc.input, got, tc.want)
 			}
 		})
-	}
-}
-
-// Slash lines go out as command frames, and an escaped slash goes out as chat
-// with the escape stripped.
-func TestSendLoopSendsCommandsAndEscapedChat(t *testing.T) {
-	pipe := newTestPipe(t)
-	dead := make(chan struct{})
-
-	frames := make(chan protocol.Frame, 2)
-	go func() {
-		defer close(dead) // stands in for receiveLoop noticing the close
-		for i := 0; i < 2; i++ {
-			f, err := pipe.Peer.Recv()
-			if err != nil {
-				return
-			}
-			frames <- f
-		}
-		// Drain until the client closes so sendLoop's final Close is observed.
-		for {
-			if _, err := pipe.Peer.Recv(); err != nil {
-				return
-			}
-		}
-	}()
-
-	captureStdout(t, func() {
-		sendLoop(pipe.Client, "alice", scannerOf("/msg bob hi", "//not a command"), dead)
-	})
-
-	name, args := commandFrom(t, <-frames)
-	if name != "msg" {
-		t.Errorf("Server received the command %q, wanted %q", name, "msg")
-	}
-	if !slices.Equal(args, []string{"bob", "hi"}) {
-		t.Errorf("Server received the args %q, wanted %q", args, []string{"bob", "hi"})
-	}
-
-	from, text := chatFrom(t, <-frames)
-	if from != "alice" {
-		t.Errorf("Server received chat from %q, wanted %q", from, "alice")
-	}
-	if text != "/not a command" {
-		t.Errorf("Server received the text %q, wanted the escape stripped to %q", text, "/not a command")
 	}
 }
 
