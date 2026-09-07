@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 	"github.com/HarryCoburn/simple-talk/internal/validate"
@@ -14,7 +15,7 @@ import (
 // that the user name given is legal and doesn't clash with another name on the server.
 // Receipt of a HandshakeAck frame proves the server verified the name and tells the client
 // that it is safe to start sendLoop and receiveLoop.
-func negotiateName(conn *protocol.Conn, inputScanner *bufio.Scanner, version string) (string, error) {
+func negotiateName(w io.Writer, conn *protocol.Conn, inputScanner *bufio.Scanner, version string) (string, error) {
 	fmt.Print(userNamePrompt)
 	for { // To handle reasking if there's a problem. Break if successful.
 		// Get a name and clean it properly
@@ -23,8 +24,8 @@ func negotiateName(conn *protocol.Conn, inputScanner *bufio.Scanner, version str
 			// Make sure username meets our rules
 			cleaned, err := validate.Name(input)
 			if err != nil {
-				fmt.Println("Error in input. Try again")
-				fmt.Print(userNamePrompt)
+				fmt.Fprintln(w, "Error in input. Try again")
+				fmt.Fprint(w, userNamePrompt)
 				continue
 			}
 			// Try to send it to the server for further validation

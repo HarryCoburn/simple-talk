@@ -41,7 +41,7 @@ func Run(addr string) error {
 	stdin := bufio.NewScanner(os.Stdin)
 
 	// Handshake
-	name, err := negotiateName(conn, stdin, protocol.ProtocolVersion)
+	name, err := negotiateName(os.Stdout, conn, stdin, protocol.ProtocolVersion)
 	if err != nil {
 		return fmt.Errorf("problem with setting username: %v", err)
 

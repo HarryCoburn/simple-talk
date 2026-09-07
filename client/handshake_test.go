@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -8,76 +9,70 @@ import (
 )
 
 func TestNegotiateName(t *testing.T) {
+	// The name rules themselves are internal/validate's to test; negotiateName now
+	// calls validate.Name directly, so what is left to cover here is the prompting
+	// loop around it.
+	t.Run("Sent user name returns the acked name", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		sent := make(chan string, 1)
+		w := bytes.Buffer{}
 
-}
+		go func() {
+			f, err := pipe.Peer.Recv()
+			if err != nil {
+				sent <- "<recv error: " + err.Error() + ">"
+				return
+			}
+			sent <- handshakeName(t, f)
+			pipe.Peer.SendHandshakeAck("alice_2") // Server renames a duplicate
+		}()
 
-// Tests for the handshake: picking a username the server will accept.
-//
-// The name rules themselves are internal/validate's to test; negotiateName now
-// calls validate.Name directly, so what is left to cover here is the prompting
-// loop around it.
+		var name string
+		var err error
+		out := captureStdout(t, func() {
+			name, err = negotiateName(&w, pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
+		})
 
-func TestSetUserNameReturnsTheAckedName(t *testing.T) {
-	pipe := newTestPipe(t)
-	sent := make(chan string, 1)
-
-	go func() {
-		f, err := pipe.Peer.Recv()
 		if err != nil {
-			sent <- "<recv error: " + err.Error() + ">"
-			return
+			t.Fatalf("setUserName returned an unexpected error: %v", err)
 		}
-		sent <- handshakeName(t, f)
-		pipe.Peer.SendHandshakeAck("alice_2") // Server renames a duplicate
-	}()
-
-	var name string
-	var err error
-	out := captureStdout(t, func() {
-		name, err = negotiateName(pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
+		if got := <-sent; got != "alice" {
+			t.Errorf("Server received the name %q, wanted the cleaned %q", got, "alice")
+		}
+		if name != "alice_2" {
+			t.Errorf("setUserName returned %q, wanted the server's name %q", name, "alice_2")
+		}
+		if !strings.Contains(out, userNamePrompt) {
+			t.Errorf("The user was never prompted. Output was: %q", out)
+		}
 	})
 
-	if err != nil {
-		t.Fatalf("setUserName returned an unexpected error: %v", err)
-	}
-	if got := <-sent; got != "alice" {
-		t.Errorf("Server received the name %q, wanted the cleaned %q", got, "alice")
-	}
-	if name != "alice_2" {
-		t.Errorf("setUserName returned %q, wanted the server's name %q", name, "alice_2")
-	}
-	if !strings.Contains(out, userNamePrompt) {
-		t.Errorf("The user was never prompted. Output was: %q", out)
-	}
-}
+	t.Run("protocol version numbers match", func(t *testing.T) {
+		pipe := newTestPipe(t)
+		versions := make(chan string, 1)
+		w := bytes.Buffer{}
 
-// The handshake carries the client's version so the server can turn away a
-// client it cannot talk to. Whatever version the client is built with is the
-// version that goes on the wire.
-func TestSetUserNameSendsTheClientVersion(t *testing.T) {
-	pipe := newTestPipe(t)
-	versions := make(chan string, 1)
+		go func() {
+			f, err := pipe.Peer.Recv()
+			if err != nil {
+				close(versions)
+				return
+			}
+			versions <- handshakeVersion(t, f)
+			pipe.Peer.SendHandshakeAck("alice")
+		}()
 
-	go func() {
-		f, err := pipe.Peer.Recv()
+		var err error
+		captureStdout(t, func() {
+			_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		})
 		if err != nil {
-			close(versions)
-			return
+			t.Fatalf("sendHandshake returned an unexpected error: %v", err)
 		}
-		versions <- handshakeVersion(t, f)
-		pipe.Peer.SendHandshakeAck("alice")
-	}()
-
-	var err error
-	captureStdout(t, func() {
-		_, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		if got := <-versions; got != protocol.ProtocolVersion {
+			t.Errorf("Server received the version %q, wanted %q", got, protocol.ProtocolVersion)
+		}
 	})
-	if err != nil {
-		t.Fatalf("sendHandshake returned an unexpected error: %v", err)
-	}
-	if got := <-versions; got != protocol.ProtocolVersion {
-		t.Errorf("Server received the version %q, wanted %q", got, protocol.ProtocolVersion)
-	}
 }
 
 // A blank line is rejected locally: the server should only ever see the second,
@@ -85,6 +80,7 @@ func TestSetUserNameSendsTheClientVersion(t *testing.T) {
 func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	pipe := newTestPipe(t)
 	names := make(chan string, 1)
+	w := bytes.Buffer{}
 
 	go func() {
 		f, err := pipe.Peer.Recv()
@@ -99,7 +95,7 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	var name string
 	var err error
 	out := captureStdout(t, func() {
-		name, err = negotiateName(pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
+		name, err = negotiateName(&w, pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
 	})
 
 	if err != nil {
@@ -120,6 +116,7 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 // the client has no name to run under, so it must not press on regardless.
 func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	pipe := newTestPipe(t)
+	w := bytes.Buffer{}
 
 	go func() {
 		if _, err := pipe.Peer.Recv(); err != nil {
@@ -131,7 +128,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		name, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -145,6 +142,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 // A rejection carries a reason, and the user is told what it was.
 func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 	pipe := newTestPipe(t)
+	w := bytes.Buffer{}
 
 	go func() {
 		if _, err := pipe.Peer.Recv(); err != nil {
@@ -155,7 +153,7 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -169,6 +167,7 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 // If the server hangs up before replying, the read fails and the error is shown.
 func TestSetUserNameReportsAReceiveError(t *testing.T) {
 	pipe := newTestPipe(t)
+	w := bytes.Buffer{}
 
 	go func() {
 		pipe.Peer.Recv() // take the handshake, then hang up
@@ -177,7 +176,7 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 
 	var err error
 	captureStdout(t, func() {
-		_, err = negotiateName(pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 	})
 
 	if err == nil {
@@ -188,11 +187,12 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 // Closing stdin at the prompt (ctrl-D) is a normal exit, not a failure.
 func TestSetUserNameHandlesClosedInput(t *testing.T) {
 	pipe := newTestPipe(t)
+	w := bytes.Buffer{}
 
 	var name string
 	var err error
 	captureStdout(t, func() {
-		name, err = negotiateName(pipe.Client, scannerOf(), protocol.ProtocolVersion)
+		name, err = negotiateName(&w, pipe.Client, scannerOf(), protocol.ProtocolVersion)
 	})
 
 	if err != nil {
