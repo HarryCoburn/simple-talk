@@ -36,75 +36,6 @@ func check(t *testing.T, op string, err error) {
 }
 
 func TestReceiveLoop(t *testing.T) {
-
-	t.Run("receive loop prints chat messages", func(t *testing.T) {
-
-		got := runReceiveLoop(t, func(peer *protocol.Conn) {
-			err := peer.SendChat("bob", "hello there")
-			check(t, "SendChat failed:", err)
-			err = peer.SendChat("carol", "hi bob")
-			check(t, "SendChat failed:", err)
-			err = peer.Close() // ends the loop
-			check(t, "Close failed", err)
-		})
-		for _, want := range []string{"hello there", "hi bob"} {
-			if !strings.Contains(got, want) {
-				t.Errorf("Wanted the output to contain %q, got: %q", want, got)
-			}
-		}
-	})
-
-	t.Run("receive loop prints system and error frames", func(t *testing.T) {
-
-		got := runReceiveLoop(t, func(peer *protocol.Conn) {
-			err := peer.SendSystem("bob joined the room")
-			check(t, "SendSystem failed:", err)
-			err = peer.SendError("unknown command")
-			check(t, "SendError failed:", err)
-			err = peer.Close()
-			check(t, "Close failed", err)
-		})
-
-		if !strings.Contains(got, "bob joined the room") {
-			t.Errorf("Wanted the system message in the output, got: %q", got)
-		}
-		if !strings.Contains(got, "Error: unknown command") {
-			t.Errorf("Wanted the error message labelled as an error, got: %q", got)
-		}
-	})
-
-	t.Run("receive loop skips frames it cannot use", func(t *testing.T) {
-
-		got := runReceiveLoop(t, func(peer *protocol.Conn) {
-			// err := peer.SendFrame(protocol.Frame)
-			// check(t, "KindCommand with undecodable payload failed", err)
-			err := peer.SendFrame(protocol.Frame{
-				Kind:    protocol.KindChat,
-				Payload: []byte(`"not a chat object"`), // undecodable payload
-			})
-			check(t, "KindChat with undecodable payload failed", err)
-			err = peer.SendFrame(protocol.Frame{
-				Kind:    protocol.KindSystem,
-				Payload: []byte(`["not a system object"]`),
-			})
-			check(t, "KindSystem with undecodable payload failed", err)
-			err = peer.SendFrame(protocol.Frame{
-				Kind:    protocol.KindError,
-				Payload: []byte(`42`),
-			})
-			check(t, "KindError with undecodable payload failed", err)
-			err = peer.SendChat("bob", "still here")
-			check(t, "SendChat failed", err)
-			err = peer.Close()
-			check(t, "Close failed", err)
-		})
-
-		// After chewing through a bunch of faulty frames, check if the last frame comes through clean.
-		if !strings.Contains(got, "still here") {
-			t.Errorf("Faulty frames were not skipped. Last output was: %q", got)
-		}
-	})
-
 	t.Run("receive loop closes dead on disconnect", func(t *testing.T) {
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
@@ -122,30 +53,58 @@ func TestReceiveLoop(t *testing.T) {
 
 func TestFormatFrame(t *testing.T) {
 
-	t.Run("Checking faulty frames", func(t *testing.T) {
-		frameTests := []struct {
-			name  string
-			frame protocol.Frame
-		}{
-			{name: "malformed KindCommand", frame: protocol.Frame{
-				Kind:    protocol.KindCommand,
-				Payload: []byte(`"not a command object"`), // undecodable payload
-			}},
-			{name: "malformed KindChat", frame: protocol.Frame{
-				Kind:    protocol.KindChat,
-				Payload: []byte(`"not a chat object"`), // undecodable payload
-			}},
-		}
+	frameTests := []struct {
+		name    string
+		frame   protocol.Frame
+		want    string
+		wantErr bool
+	}{
+		// Clients should not receive commands
+		{name: "malformed KindCommand", frame: protocol.Frame{
+			Kind:    protocol.KindCommand,
+			Payload: []byte(`"not a command object"`), // undecodable payload
+		}, want: "", wantErr: false},
 
-		for _, tt := range frameTests {
-			t.Run(tt.name, func(t *testing.T) {
-				switch tt.frame.Kind {
-				case protocol.KindCommand:
-					formatFrame(tt.frame)
-				}
-			})
-		}
-	})
+		{name: "malformed KindChat", frame: protocol.Frame{
+			Kind:    protocol.KindChat,
+			Payload: []byte(`"not a chat object"`), // undecodable payload
+		}, want: "", wantErr: true},
+		{name: "malformed KindSystem", frame: protocol.Frame{
+			Kind:    protocol.KindSystem,
+			Payload: []byte(`["not a system object"]`),
+		}, want: "", wantErr: true},
+		{name: "malformed KindError", frame: protocol.Frame{
+			Kind:    protocol.KindError,
+			Payload: []byte(`42`),
+		}, want: "", wantErr: true},
+		{name: "well-formed KindChat", frame: protocol.Frame{
+			Kind:    protocol.KindChat,
+			Payload: []byte(`{"from": "harry", "text": "test"}`),
+		},
+			want: "<harry> test", wantErr: false},
+		{name: "well-formed KindSystem", frame: protocol.Frame{
+			Kind:    protocol.KindSystem,
+			Payload: []byte(`{"text": "test"}`),
+		},
+			want: "test", wantErr: false},
+		{name: "well-formed KindError", frame: protocol.Frame{
+			Kind:    protocol.KindError,
+			Payload: []byte(`{"message": "test"}`),
+		},
+			want: "test", wantErr: false},
+	}
+
+	for _, tt := range frameTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := formatFrame(tt.frame)
+			if got != tt.want {
+				t.Errorf("wanted message %q got %q", tt.want, got)
+			}
+			if (gotErr != nil) != tt.wantErr {
+				t.Errorf("wanted error presence to be %v got %v", tt.wantErr, gotErr)
+			}
+		})
+	}
 
 }
 

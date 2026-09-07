@@ -13,10 +13,16 @@ import (
 	"github.com/HarryCoburn/simple-talk/internal/protocol"
 )
 
-const userNamePrompt string = "Please state your username: "
+const (
+	userNamePrompt string = "Please state your username: "
+	DefaultAddr    string = "localhost:2069"
+	ChatFrameErr   string = "Chat frame error: %w"
+	SystemFrameErr string = "System frame error: %w"
+	ErrorFrameErr  string = "Error frame error: %w"
+	MsgFormat      string = "<%s> %s"
+)
 
 // DefaultAddr is the server the client dials when none is given.
-const DefaultAddr = "localhost:2069"
 
 // Run connects to the server at addr, negotiates a username, then runs a
 // receive loop and a send loop.
@@ -63,10 +69,10 @@ func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 		}
 		msg, err := formatFrame(f)
 		if err != nil {
-			// faulty frame
+			// faulty frame, decide how to handle the error logging later.
 			continue
 		}
-		fmt.Fprintln(w, msg)
+		fmt.Fprint(w, msg)
 
 	}
 
@@ -77,19 +83,19 @@ func formatFrame(f protocol.Frame) (string, error) {
 	case protocol.KindChat:
 		var msg protocol.Chat
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
-			return "", fmt.Errorf("Chat frame error: %w", err)
+			return "", fmt.Errorf(ChatFrameErr, err)
 		}
-		return msg.Text, nil
+		return fmt.Sprintf(MsgFormat, msg.From, msg.Text), nil
 	case protocol.KindSystem:
 		var msg protocol.System
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
-			return "", fmt.Errorf("System frame error: %w", err)
+			return "", fmt.Errorf(SystemFrameErr, err)
 		}
 		return msg.Text, nil
 	case protocol.KindError:
 		var msg protocol.Error
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
-			return "", fmt.Errorf("Error frame error: %w", err)
+			return "", fmt.Errorf(ErrorFrameErr, err)
 		}
 		return msg.Message, nil
 	default:
