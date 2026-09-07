@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"net"
@@ -135,4 +136,26 @@ func commandFrom(t *testing.T, f protocol.Frame) (string, []string) {
 		t.Fatalf("Could not unpack the command payload: %v", err)
 	}
 	return cmd.Name, cmd.Args
+}
+
+func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
+	t.Helper()
+	pipe := newTestPipe(t)
+	dead := make(chan struct{})
+	buf := bytes.Buffer{}
+
+	go send(pipe.Peer)
+
+	receiveLoop(&buf, pipe.Client, dead)
+	waitClosed(t, dead, "dead")
+	got := buf.String()
+
+	return got
+}
+
+func check(t *testing.T, op string, err error) {
+	t.Helper()
+	if err != nil {
+		t.Errorf("%s: %v", op, err)
+	}
 }
