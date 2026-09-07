@@ -29,9 +29,8 @@ func TestNegotiateName(t *testing.T) {
 
 		var name string
 		var err error
-		out := captureStdout(t, func() {
-			name, err = negotiateName(&w, pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
-		})
+		name, err = negotiateName(&w, pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
+		out := w.String()
 
 		if err != nil {
 			t.Fatalf("setUserName returned an unexpected error: %v", err)
@@ -63,9 +62,7 @@ func TestNegotiateName(t *testing.T) {
 		}()
 
 		var err error
-		captureStdout(t, func() {
-			_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
-		})
+		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 		if err != nil {
 			t.Fatalf("sendHandshake returned an unexpected error: %v", err)
 		}
@@ -94,9 +91,8 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 
 	var name string
 	var err error
-	out := captureStdout(t, func() {
-		name, err = negotiateName(&w, pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
-	})
+	name, err = negotiateName(&w, pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
+	out := w.String()
 
 	if err != nil {
 		t.Fatalf("setUserName returned an unexpected error: %v", err)
@@ -127,9 +123,7 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 
 	var name string
 	var err error
-	captureStdout(t, func() {
-		name, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
-	})
+	name, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 
 	if err == nil {
 		t.Fatalf("sendHandshake returned %q and no error, wanted an error for a non-ack reply", name)
@@ -152,9 +146,7 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 	}()
 
 	var err error
-	captureStdout(t, func() {
-		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
-	})
+	_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 
 	if err == nil {
 		t.Fatal("setUserName returned no error for a rejected name")
@@ -175,9 +167,7 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 	}()
 
 	var err error
-	captureStdout(t, func() {
-		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
-	})
+	_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 
 	if err == nil {
 		t.Fatal("setUserName returned no error, wanted one after the server hung up")
@@ -191,9 +181,7 @@ func TestSetUserNameHandlesClosedInput(t *testing.T) {
 
 	var name string
 	var err error
-	captureStdout(t, func() {
-		name, err = negotiateName(&w, pipe.Client, scannerOf(), protocol.ProtocolVersion)
-	})
+	name, err = negotiateName(&w, pipe.Client, scannerOf(), protocol.ProtocolVersion)
 
 	if err != nil {
 		t.Fatalf("setUserName returned an error for a normal stdin close: %v", err)
