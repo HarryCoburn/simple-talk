@@ -36,12 +36,36 @@ func check(t *testing.T, op string, err error) {
 }
 
 func TestReceiveLoop(t *testing.T) {
+
+	t.Run("receive loop continues after malformed frames", func(t *testing.T) {
+		got := runReceiveLoop(t, func(peer *protocol.Conn) {
+			err := peer.SendFrame(protocol.Frame{
+				Kind:    protocol.KindChat,
+				Payload: []byte(`"not a chat object"`),
+			})
+			check(t, "SendFrame failed", err)
+
+			err = peer.SendFrame(protocol.Frame{
+				Kind:    protocol.KindChat,
+				Payload: []byte(`{"from": "harry", "text": "test"}`),
+			})
+			check(t, "SendFrame failed", err)
+
+			err = peer.Close()
+			check(t, "Close failed", err)
+		})
+
+		want := "<harry> test\n" + ClosedPipeNotification
+		if got != want {
+			t.Errorf("receive loop did not continue correctly after malformed frames. Got %q wanted %q", got, want)
+		}
+	})
+
 	t.Run("receive loop closes dead on disconnect", func(t *testing.T) {
 
 		got := runReceiveLoop(t, func(peer *protocol.Conn) {
 			err := peer.Close()
 			check(t, "Close failed", err)
-
 		})
 
 		if !strings.Contains(got, ClosedPipeNotification) {
@@ -65,6 +89,17 @@ func TestFormatFrame(t *testing.T) {
 			Payload: []byte(`"not a command object"`), // undecodable payload
 		}, want: "", wantErr: false},
 
+		// Handshakes pass through unformatted
+		{name: "wellformed KindHandshake", frame: protocol.Frame{
+			Kind:    protocol.KindHandshake,
+			Payload: []byte(`"name":"harry","version":"test"`),
+		}, want: "", wantErr: false},
+		{name: "wellformed KindHandshakeAct", frame: protocol.Frame{
+			Kind:    protocol.KindHandshakeAck,
+			Payload: []byte(`"name":"harry"`),
+		}, want: "", wantErr: false},
+
+		// Actual error checking
 		{name: "malformed KindChat", frame: protocol.Frame{
 			Kind:    protocol.KindChat,
 			Payload: []byte(`"not a chat object"`), // undecodable payload
@@ -77,21 +112,23 @@ func TestFormatFrame(t *testing.T) {
 			Kind:    protocol.KindError,
 			Payload: []byte(`42`),
 		}, want: "", wantErr: true},
+
+		// Formatting well-formed frames
 		{name: "well-formed KindChat", frame: protocol.Frame{
 			Kind:    protocol.KindChat,
 			Payload: []byte(`{"from": "harry", "text": "test"}`),
 		},
-			want: "<harry> test", wantErr: false},
+			want: "<harry> test\n", wantErr: false},
 		{name: "well-formed KindSystem", frame: protocol.Frame{
 			Kind:    protocol.KindSystem,
 			Payload: []byte(`{"text": "test"}`),
 		},
-			want: "test", wantErr: false},
+			want: "test\n", wantErr: false},
 		{name: "well-formed KindError", frame: protocol.Frame{
 			Kind:    protocol.KindError,
 			Payload: []byte(`{"message": "test"}`),
 		},
-			want: "test", wantErr: false},
+			want: "Error: test\n", wantErr: false},
 	}
 
 	for _, tt := range frameTests {
@@ -105,7 +142,6 @@ func TestFormatFrame(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 // SendLoop

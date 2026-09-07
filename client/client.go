@@ -19,7 +19,9 @@ const (
 	ChatFrameErr   string = "Chat frame error: %w"
 	SystemFrameErr string = "System frame error: %w"
 	ErrorFrameErr  string = "Error frame error: %w"
-	MsgFormat      string = "<%s> %s"
+	MsgFormat      string = "<%s> %s\n"
+	ErrFormat      string = "Error: %s\n"
+	SystemFormat   string = "%s\n"
 )
 
 // DefaultAddr is the server the client dials when none is given.
@@ -65,7 +67,7 @@ func receiveLoop(w io.Writer, conn *protocol.Conn, dead chan struct{}) {
 				return
 			}
 			fmt.Fprintf(w, "\nDisconnected: %v\n", err)
-			os.Exit(1)
+			return
 		}
 		msg, err := formatFrame(f)
 		if err != nil {
@@ -91,13 +93,13 @@ func formatFrame(f protocol.Frame) (string, error) {
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
 			return "", fmt.Errorf(SystemFrameErr, err)
 		}
-		return msg.Text, nil
+		return fmt.Sprintf(SystemFormat, msg.Text), nil
 	case protocol.KindError:
 		var msg protocol.Error
 		if err := json.Unmarshal(f.Payload, &msg); err != nil {
 			return "", fmt.Errorf(ErrorFrameErr, err)
 		}
-		return msg.Message, nil
+		return fmt.Sprintf(ErrFormat, msg.Message), nil
 	default:
 		return "", nil
 	}
