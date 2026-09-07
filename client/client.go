@@ -14,20 +14,23 @@ import (
 )
 
 const (
-	userNamePrompt string     = "Please state your username: "
-	DefaultAddr    string     = "localhost:2069"
-	ChatFrameErr   string     = "Chat frame error: %w"
-	SystemFrameErr string     = "System frame error: %w"
-	ErrorFrameErr  string     = "Error frame error: %w"
-	MsgFormat      string     = "<%s> %s\n"
-	ErrFormat      string     = "Error: %s\n"
-	SystemFormat   string     = "%s\n"
-	intentNothing  intentKind = 0
-	intentChat     intentKind = 1
-	intentCommand  intentKind = 2
+	userNamePrompt string = "Please state your username: "
+	DefaultAddr    string = "localhost:2069"
+	ChatFrameErr   string = "Chat frame error: %w"
+	SystemFrameErr string = "System frame error: %w"
+	ErrorFrameErr  string = "Error frame error: %w"
+	MsgFormat      string = "<%s> %s\n"
+	ErrFormat      string = "Error: %s\n"
+	SystemFormat   string = "%s\n"
 )
 
 type intentKind int
+
+const (
+	intentNothing intentKind = iota
+	intentChat
+	intentCommand
+)
 
 type inputIntent struct {
 	Intent intentKind

@@ -190,7 +190,7 @@ func TestClassify(t *testing.T) {
 func TestSendLoop(t *testing.T) {
 	// A server-side disconnect closes dead, and the send loop must give up rather
 	// than keep writing into a dead connection.
-	t.Run("sendLoop stops once dead is closed", func(t *testing.T) {
+	t.Run("stops once dead is closed", func(t *testing.T) {
 		pipe := newTestPipe(t)
 		dead := make(chan struct{})
 		w := bytes.Buffer{}
@@ -201,15 +201,14 @@ func TestSendLoop(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			captureStdout(t, func() {
-				sendLoop(&w, pipe.Client, "alice", scannerOf("should not be sent"), dead)
-			})
+			sendLoop(&w, pipe.Client, "alice", scannerOf("should not be sent"), dead)
+
 		}()
 
 		waitClosed(t, done, "sendLoop")
 	})
 
-	t.Run("sendLoop reports send failures", func(t *testing.T) {
+	t.Run("reports send failures", func(t *testing.T) {
 		pipe := newTestPipe(t)
 		dead := make(chan struct{})
 		pipe.Peer.Close() // writes now fail immediately
@@ -218,9 +217,7 @@ func TestSendLoop(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			captureStdout(t, func() {
-				sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "world"), dead)
-			})
+			sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "world"), dead)
 		}()
 
 		waitClosed(t, done, "sendLoop")
@@ -230,7 +227,7 @@ func TestSendLoop(t *testing.T) {
 		}
 	})
 
-	t.Run("sends each line as chat", func(t *testing.T) {
+	t.Run("dispatches each line to the right send method", func(t *testing.T) {
 		pipe := newTestPipe(t)
 		dead := make(chan struct{})
 		frames := make(chan protocol.Frame, 2)
@@ -257,7 +254,7 @@ func TestSendLoop(t *testing.T) {
 			}
 		}()
 
-		sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "world"), dead)
+		sendLoop(&w, pipe.Client, "alice", scannerOf("hello", "     ", "/msg bob hi"), dead)
 
 		// sendLoop doesn't close the cnnection, so the drain ends when this does.
 		pipe.Client.Close()
@@ -267,18 +264,34 @@ func TestSendLoop(t *testing.T) {
 			t.Errorf("sendLoop reported a problem: %s", w.String())
 		}
 
-		type msg protocol.Chat
-		var have []msg
+		var got []protocol.Frame
 		for f := range frames {
-			from, text := chatFrom(t, f) // On the test goroutine, so t.Fatalf is safe
-			have = append(have, msg{From: from, Text: text})
+			got = append(got, f)
+		}
+		if len(got) != 2 {
+			t.Fatalf("Server received %d frames, wanted 2: %+v", len(got), got)
 		}
 
-		want := []msg{{"alice", "hello"}, {"alice", "world"}}
-		if !slices.Equal(have, want) {
-			t.Errorf("Server received %+v, wanted %+v", have, want)
+		// Chat carries the negotiated name.
+		if got[0].Kind != protocol.KindChat {
+			t.Fatalf("First frame was %v, wanted a chat frame", got[0].Kind)
+		}
+		from, text := chatFrom(t, got[0])
+		if from != "alice" || text != "hello" {
+			t.Errorf("Server received chat from %q saying %q, wanted %q and %q", from, text, "alice", "hello")
 		}
 
+		// Commands do not: the server knows who sent them from the connection.
+		if got[1].Kind != protocol.KindCommand {
+			t.Fatalf("Second frame was %v, wanted a command frame", got[1].Kind)
+		}
+		cmd, args := commandFrom(t, got[1])
+		if cmd != "msg" {
+			t.Errorf("Server received the command %q, wanted %q", cmd, "msg")
+		}
+		if !slices.Equal(args, []string{"bob", "hi"}) {
+			t.Errorf("Server received the args %q, wanted %q", args, []string{"bob", "hi"})
+		}
 	})
 }
 
