@@ -34,9 +34,7 @@ func TestNegotiateName(t *testing.T) {
 			pipe.Peer.SendHandshakeAck("alice_2") // Server renames a duplicate
 		}()
 
-		var name string
-		var err error
-		name, err = negotiateName(&w, pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
+		name, err := negotiateName(&w, pipe.Client, scannerOf(" alice "), protocol.ProtocolVersion)
 		out := w.String()
 
 		fmt.Printf("Received this in out: %q", out)
@@ -68,8 +66,7 @@ func TestNegotiateName(t *testing.T) {
 			pipe.Peer.SendHandshakeAck("alice")
 		}()
 
-		var err error
-		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err := negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 		if err != nil {
 			t.Fatalf("sendHandshake returned an unexpected error: %v", err)
 		}
@@ -93,9 +90,7 @@ func TestNegotiateName(t *testing.T) {
 			pipe.Peer.SendHandshakeAck("bob")
 		}()
 
-		var name string
-		var err error
-		name, err = negotiateName(&w, pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
+		name, err := negotiateName(&w, pipe.Client, scannerOf("   ", "bob"), protocol.ProtocolVersion)
 		out := w.String()
 
 		if err != nil {
@@ -124,9 +119,7 @@ func TestNegotiateName(t *testing.T) {
 			pipe.Peer.SendSystem("welcome to the room") // a real frame, but not one that ends a handshake
 		}()
 
-		var name string
-		var err error
-		name, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		name, err := negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 
 		if err == nil {
 			t.Fatalf("sendHandshake returned %q and no error, wanted an error for a non-ack reply", name)
@@ -147,8 +140,7 @@ func TestNegotiateName(t *testing.T) {
 			pipe.Peer.SendError("that name is already taken")
 		}()
 
-		var err error
-		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err := negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 
 		if err == nil {
 			t.Fatal("setUserName returned no error for a rejected name")
@@ -167,8 +159,7 @@ func TestNegotiateName(t *testing.T) {
 			pipe.Peer.Close()
 		}()
 
-		var err error
-		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
+		_, err := negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 
 		if err == nil {
 			t.Fatal("setUserName returned no error, wanted one after the server hung up")
@@ -179,9 +170,7 @@ func TestNegotiateName(t *testing.T) {
 	t.Run("handle ctrl-D input", func(t *testing.T) {
 		pipe, _, w := handshakeSetup(t)
 
-		var name string
-		var err error
-		name, err = negotiateName(&w, pipe.Client, scannerOf(), protocol.ProtocolVersion)
+		name, err := negotiateName(&w, pipe.Client, scannerOf(), protocol.ProtocolVersion)
 
 		if err != nil {
 			t.Fatalf("setUserName returned an error for a normal stdin close: %v", err)
