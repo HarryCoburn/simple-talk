@@ -159,3 +159,32 @@ func check(t *testing.T, op string, err error) {
 		t.Errorf("%s: %v", op, err)
 	}
 }
+
+// answerHandshake takes the one handshake frame the client sends and replies to it
+// with reply. The frame comes back on the returned channel so the test can assert
+// on it from its own goroutine, where t.Fatalf is legal; a failed read closes the
+// channel without sending, so the test sees "no handshake" rather than a hang.
+func answerHandshake(t *testing.T, peer *protocol.Conn, reply func(peer *protocol.Conn)) <-chan protocol.Frame {
+	t.Helper()
+	frames := make(chan protocol.Frame, 1)
+	go func() {
+		defer close(frames)
+		f, err := peer.Recv()
+		if err != nil {
+			return
+		}
+		frames <- f
+		reply(peer)
+	}()
+	return frames
+}
+
+// mustHandshake reads the frame answerHandshake captured, failing if none arrived.
+func mustHandshake(t *testing.T, frames <-chan protocol.Frame) protocol.Frame {
+	t.Helper()
+	f, ok := <-frames
+	if !ok {
+		t.Fatal("The server never received a handshake")
+	}
+	return f
+}

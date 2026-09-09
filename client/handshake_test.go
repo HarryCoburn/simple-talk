@@ -14,18 +14,11 @@ func TestNegotiateName(t *testing.T) {
 	// loop around it.
 	t.Run("Sent user name returns the acked name", func(t *testing.T) {
 		pipe := newTestPipe(t)
-		sent := make(chan string, 1)
 		w := bytes.Buffer{}
 
-		go func() {
-			f, err := pipe.Peer.Recv()
-			if err != nil {
-				sent <- "<recv error: " + err.Error() + ">"
-				return
-			}
-			sent <- handshakeName(t, f)
-			pipe.Peer.SendHandshakeAck("alice_2") // Server renames a duplicate
-		}()
+		frames := answerHandshake(t, pipe.Peer, func(peer *protocol.Conn) {
+			peer.SendHandshakeAck("alice_2") // Server renames a duplicate
+		})
 
 		var name string
 		var err error
@@ -35,7 +28,7 @@ func TestNegotiateName(t *testing.T) {
 		if err != nil {
 			t.Fatalf("setUserName returned an unexpected error: %v", err)
 		}
-		if got := <-sent; got != "alice" {
+		if got := handshakeName(t, mustHandshake(t, frames)); got != "alice" {
 			t.Errorf("Server received the name %q, wanted the cleaned %q", got, "alice")
 		}
 		if name != "alice_2" {
@@ -48,25 +41,18 @@ func TestNegotiateName(t *testing.T) {
 
 	t.Run("protocol version numbers match", func(t *testing.T) {
 		pipe := newTestPipe(t)
-		versions := make(chan string, 1)
 		w := bytes.Buffer{}
 
-		go func() {
-			f, err := pipe.Peer.Recv()
-			if err != nil {
-				close(versions)
-				return
-			}
-			versions <- handshakeVersion(t, f)
-			pipe.Peer.SendHandshakeAck("alice")
-		}()
+		frames := answerHandshake(t, pipe.Peer, func(peer *protocol.Conn) {
+			peer.SendHandshakeAck("alice")
+		})
 
 		var err error
 		_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
 		if err != nil {
 			t.Fatalf("sendHandshake returned an unexpected error: %v", err)
 		}
-		if got := <-versions; got != protocol.ProtocolVersion {
+		if got := handshakeVersion(t, mustHandshake(t, frames)); got != protocol.ProtocolVersion {
 			t.Errorf("Server received the version %q, wanted %q", got, protocol.ProtocolVersion)
 		}
 	})
@@ -76,18 +62,11 @@ func TestNegotiateName(t *testing.T) {
 // valid name, and the user should be prompted again.
 func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	pipe := newTestPipe(t)
-	names := make(chan string, 1)
 	w := bytes.Buffer{}
 
-	go func() {
-		f, err := pipe.Peer.Recv()
-		if err != nil {
-			close(names)
-			return
-		}
-		names <- handshakeName(t, f)
-		pipe.Peer.SendHandshakeAck("bob")
-	}()
+	frames := answerHandshake(t, pipe.Peer, func(peer *protocol.Conn) {
+		peer.SendHandshakeAck("bob")
+	})
 
 	var name string
 	var err error
@@ -100,7 +79,7 @@ func TestSetUserNameRepromptsOnBlankInput(t *testing.T) {
 	if name != "bob" {
 		t.Errorf("setUserName returned %q, wanted %q", name, "bob")
 	}
-	if got := <-names; got != "bob" {
+	if got := handshakeName(t, mustHandshake(t, frames)); got != "bob" {
 		t.Errorf("Server received %q, wanted the blank line to be filtered out", got)
 	}
 	if strings.Count(out, userNamePrompt) != 2 {
@@ -114,12 +93,9 @@ func TestSetUserNameRejectsANonAckReply(t *testing.T) {
 	pipe := newTestPipe(t)
 	w := bytes.Buffer{}
 
-	go func() {
-		if _, err := pipe.Peer.Recv(); err != nil {
-			return
-		}
-		pipe.Peer.SendSystem("welcome to the room") // a real frame, but not one that ends a handshake
-	}()
+	answerHandshake(t, pipe.Peer, func(peer *protocol.Conn) {
+		peer.SendSystem("welcome to the room") // a real frame, but not one that ends a handshake
+	})
 
 	var name string
 	var err error
@@ -138,12 +114,9 @@ func TestSetUserNameShowsTheServerReasonForRejection(t *testing.T) {
 	pipe := newTestPipe(t)
 	w := bytes.Buffer{}
 
-	go func() {
-		if _, err := pipe.Peer.Recv(); err != nil {
-			return
-		}
-		pipe.Peer.SendError("that name is already taken")
-	}()
+	answerHandshake(t, pipe.Peer, func(peer *protocol.Conn) {
+		peer.SendError("that name is already taken")
+	})
 
 	var err error
 	_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
@@ -161,10 +134,9 @@ func TestSetUserNameReportsAReceiveError(t *testing.T) {
 	pipe := newTestPipe(t)
 	w := bytes.Buffer{}
 
-	go func() {
-		pipe.Peer.Recv() // take the handshake, then hang up
-		pipe.Peer.Close()
-	}()
+	answerHandshake(t, pipe.Peer, func(peer *protocol.Conn) {
+		peer.Close() // take the handshake, then hang up
+	})
 
 	var err error
 	_, err = negotiateName(&w, pipe.Client, scannerOf("alice"), protocol.ProtocolVersion)
