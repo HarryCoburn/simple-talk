@@ -16,7 +16,7 @@ import (
 // Receipt of a HandshakeAck frame proves the server verified the name and tells the client
 // that it is safe to start sendLoop and receiveLoop.
 func negotiateName(w io.Writer, conn *protocol.Conn, inputScanner *bufio.Scanner, version string) (string, error) {
-	fmt.Print(userNamePrompt)
+	fmt.Fprint(w, userNamePrompt)
 	for { // To handle reasking if there's a problem. Break if successful.
 		// Get a name and clean it properly
 		if inputScanner.Scan() {
