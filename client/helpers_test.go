@@ -153,6 +153,30 @@ func runReceiveLoop(t *testing.T, send func(peer *protocol.Conn)) string {
 	return got
 }
 
+func answerHandshake(t *testing.T, peer *protocol.Conn, reply func(peer *protocol.Conn)) <-chan protocol.Frame {
+	t.Helper()
+	frames := make(chan protocol.Frame, 1)
+	go func() {
+		defer close(frames)
+		f, err := peer.Recv()
+		if err != nil {
+			return
+		}
+		frames <- f
+		reply(peer)
+	}()
+	return frames
+}
+
+func mustHandshake(t *testing.T, frames <-chan protocol.Frame) protocol.Frame {
+	t.Helper()
+	f, ok := <-frames
+	if !ok {
+		t.Fatal("The server never received a handshake")
+	}
+	return f
+}
+
 func check(t *testing.T, op string, err error) {
 	t.Helper()
 	if err != nil {
